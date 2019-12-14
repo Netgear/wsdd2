@@ -543,11 +543,13 @@ static void help(const char *prog, int ec, const char *fmt, ...)
 		"       -W  WSDD debug mode (incremental level)\n"
 		"       -d  go daemon\n"
 		"       -h  This message\n"
-		"       -i <interface>  Specify which interface to bind to, otherwise bind to all\n"
+		"       -i  <interface> Specify which interface to bind to, otherwise bind to all\n"
 		"       -l  LLMNR only\n"
 		"       -t  TCP only\n"
 		"       -u  UDP only\n"
 		"       -w  WSDD only\n"
+		"       -N  set NetbiosName manually\n"
+		"       -G  set Workgroup manually\n"
 		"       -b \"key1:val1,key2:val2,...\"  Boot parameters\n",
 			prog);
 	printBootInfoKeys(stdout, 11);
@@ -569,7 +571,7 @@ int main(int argc, char **argv)
 	unsigned int ipv46 = 0, tcpudp = 0, llmnrwsdd = 0;
 	char *ifname = NULL;
 
-	while ((opt = getopt(argc, argv, "?46LWb:dhltuwi:")) != -1) {
+	while ((opt = getopt(argc, argv, "?46LWb:dhltuwi:N:G:")) != -1) {
 		switch (opt) {
 		case 'L':
 			debug_L++;
@@ -586,7 +588,6 @@ int main(int argc, char **argv)
 		case 'd':
 			daemon = true;
 			break;
-		case '?':
 		case 'h':
 			help(prog, EXIT_SUCCESS, NULL);
 			break;
@@ -609,11 +610,23 @@ int main(int argc, char **argv)
 			tcpudp	|= _UDP;
 			break;
 		case 'i':
-			if (!optarg)
-				help(prog, EXIT_FAILURE, "-i provided without interface\n");
-			else
+			if (optarg != NULL && strlen(optarg) > 1) {
 				ifname = strdup(optarg);
+			}
 			break;
+		case 'N':
+			if (optarg != NULL && strlen(optarg) > 1) {
+				netbiosname = strdup(optarg);
+			}
+			break;
+		case 'G':
+			if (optarg != NULL && strlen(optarg) > 1) {
+				workgroup = strdup(optarg);
+			}
+			break;
+		case '?':
+			if (optopt == 'b' || optopt == 'i' || optopt == 'N' || optopt == 'G')
+				fprintf (stderr, "Option -%c requires an argument.\n", optopt);
 		default:
 			help(prog, EXIT_FAILURE, "bad option '%c'\n", opt);
 		}

@@ -96,13 +96,19 @@ static void uuid_endpoint(char *uuid, size_t len)
 {
 	FILE *fp = fopen("/etc/machine-id", "r");
 	int c, i = 0;
+	
+	if (!fp) {
+		fp = fopen("/proc/sys/kernel/random/boot_id", "r");
+	}
 
-	if (!fp)
+	if (!fp) {
+		DEBUG(0, W, "Can't open required '/etc/machine-id' or '/proc/sys/kernel/random/boot_id'");
 		return;
+	}
 
 	while (i < 36 && (c = getc(fp)) != EOF &&
-		(isdigit(c) || (islower(c) && isxdigit(c)))) {
-		if (i == 8 || i == 13 || i == 18 || i == 23)
+		((c == '-') || isdigit(c) || (islower(c) && isxdigit(c)))) {
+		if ((c != '-') && (i == 8 || i == 13 || i == 18 || i == 23))
 			uuid[i++] = '-';
 		uuid[i++] = c;
 	}
@@ -164,13 +170,13 @@ static struct {
 	const char *key, *_default;
 	char *value;
 } bootinfo[] = {
-	{ .key	= "vendor:",	._default = "NETGEAR"},
-	{ .key	= "model:",	._default = "ReadyNAS 314"},
+	{ .key	= "vendor:",	._default = "unknown"},
+	{ .key	= "model:",	._default = "unknown"},
 	{ .key	= "serial:",	._default = "0"},
-	{ .key	= "sku:",	._default = "RN314"},
-	{ .key	= "vendorurl:",	._default = "http://www.netgear.com"},
-	{ .key	= "modelurl:",	._default = "http://www.netgear.com"},
-	{ .key	= "presentationurl:",	._default = "http://www.netgear.com"},
+	{ .key	= "sku:",	._default = "unknown"},
+	{ .key	= "vendorurl:",	._default = NULL},
+	{ .key	= "modelurl:",	._default = NULL},
+	{ .key	= "presentationurl:",	._default = NULL},
 	{}
 };
 
@@ -807,7 +813,7 @@ static int send_http_resp_header(int fd, struct endpoint *ep,
 	return rv;
 }
 
-static char *netbiosname, *workgroup;
+char *netbiosname=NULL, *workgroup=NULL;
 
 static int wsd_send_get_response(int fd,
 				struct endpoint *ep,
