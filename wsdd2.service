@@ -6,6 +6,11 @@ BindsTo=smbd.service
 ExecStart=/usr/sbin/wsdd2
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
+DynamicUser=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
