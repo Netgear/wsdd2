@@ -767,8 +767,8 @@ again:
 					ifaddr);
 
 				if (open_ep(&ep, sv, ifa)) {
-					syslog(LOG_USER | LOG_ERR, "error: %s: %s",
-						ep->service->name, ep->errstr);
+					syslog(LOG_USER | LOG_ERR, "error: %s: %s: %s",
+						ep->service->name, ep->errstr, strerror(ep->_errno));
 					free(ep);
 					continue;
 				} else if (ep->sock < 0)
