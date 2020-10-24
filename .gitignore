@@ -1,0 +1,6 @@
+# Ignore compilation files
+*.o
+wsdd2
+
+# Ignore archlinux build files
+archlinux/*.pkg.tar.*
