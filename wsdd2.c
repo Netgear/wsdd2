@@ -293,7 +293,7 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 		};
 		struct servent *se = getservbyname(sv->port_name,
 						servicename[sv->type]);
-		ep->port = se ? se->s_port : 0;
+		ep->port = se ? ntohs(se->s_port) : 0;
 		if (!ep->port)
 			ep->port = sv->port_num;
 		if (!ep->port) {
