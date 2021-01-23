@@ -139,6 +139,9 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 		if (!ifa->ifa_addr || sa->ss.ss_family != ifa->ifa_addr->sa_family)
 			continue;
 
+		if (ifindex && if_nametoindex(ifa->ifa_name) != ifindex)
+			continue;
+
 		if (debug_W >= 5) {
 			char name[_ADDRSTRLEN];
 
@@ -197,7 +200,7 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 
 		if (inet_ntop(ci->ss.ss_family, _SIN_ADDR(ci),
 				name, sizeof name))
-			printf("%s: ci=%s\n\n", __func__, name);
+			printf("%s: ci=%s rv=%d\n\n", __func__, name, rv);
 	}
 
 	freeifaddrs(ifaddr);
@@ -740,6 +743,7 @@ again:
 					(!strncmp(ifa->ifa_name, "docker", 6)) ||
 					(!strncmp(ifa->ifa_name, "veth", 4)) ||
 					(!strncmp(ifa->ifa_name, "tun", 3)) ||
+					(!strncmp(ifa->ifa_name, "ppp", 3)) ||
 					(!strncmp(ifa->ifa_name, "zt", 2)) ||
 					(sv->mcast_addr &&
 					!(ifa->ifa_flags & IFF_MULTICAST)))

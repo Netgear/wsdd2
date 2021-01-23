@@ -49,6 +49,8 @@
 
 extern int debug_L, debug_W;
 extern char *netbiosname, *workgroup;
+extern int ifindex;
+
 #define DEBUG(x, y, ...)	\
 	do {	\
 		if (debug_##y >= (x)) {	\

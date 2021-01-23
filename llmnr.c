@@ -57,6 +57,7 @@
 #undef  DBGC_CLASS
 #define DBGC_CLASS wsdd_debug_level
 
+#define DNS_TYPE_ANY	0x00FF
 #define DNS_TYPE_A	0x0001	/* rfc 1035 */
 #define DNS_TYPE_AAAA	0x001C	/* rfc 3596 */
 #define DNS_CLASS_IN	0x0001	/* rfc 1035 */
@@ -75,8 +76,7 @@ static void dumphex(const char *label, const void *p, size_t len)
 
 static int llmnr_send_response(struct endpoint *ep,
 				_saddr_t *sa,
-				const uint8_t *in, size_t inlen,
-				const char *myname)
+				const uint8_t *in, size_t inlen)
 {
 	uint16_t qdcount, ancount, nscount;
 	uint16_t qtype, qclass;
@@ -212,16 +212,17 @@ static int llmnr_send_response(struct endpoint *ep,
 		//memset(in_label, 0, sizeof(in_label));
 	}
 
-	DEBUG(2, L, "llmnr: name in query %s (length: %zu)", in_name,
-		   in_name_len);
+	char abuf[_ADDRSTRLEN];
+	DEBUG(2, L, "llmnr: name in query %s (length: %zu) from %s", in_name,
+		   in_name_len, inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), abuf, sizeof abuf));
 
 	/*
 	 * this implementation only supports questions of type A
 	 * or AAAA
 	 */
 	qtype = in_name_p[1]*256 + in_name_p[2];
-	if (qtype != DNS_TYPE_A && qtype != DNS_TYPE_AAAA) {
-		DEBUG(1, L, "llmnr: record in question not of type A or AAAA");
+	if (qtype != DNS_TYPE_ANY && qtype != DNS_TYPE_A && qtype != DNS_TYPE_AAAA) {
+		DEBUG(1, L, "llmnr: record in question not of type ANY or A or AAAA");
 		free(in_name);
 		return -1;
 	}
@@ -241,14 +242,36 @@ static int llmnr_send_response(struct endpoint *ep,
 
 	/* check whether we are authorize for resolving this query */
 	in_name_len = strlen(in_name);
-	if (strlen(myname) != in_name_len ||
-	    strncasecmp(myname, in_name, in_name_len)) {
-		DEBUG(2, L, "llmnr: not authoritative for name %s", in_name);
-		free(in_name);
-		return -1;
-	}
 
-	free(in_name);
+	int found = 0;
+	if (strlen(netbiosname) == in_name_len &&
+            strncasecmp(netbiosname, in_name, in_name_len) == 0)
+                found = 1;
+
+	char name[HOST_NAME_MAX + 1];
+	if (gethostname(name, sizeof(name)-1) == 0 &&
+            strlen(name) == in_name_len &&
+            strncasecmp(name, in_name, in_name_len) == 0)
+                found = 1;
+
+        /*
+	while (pmyname && *pmyname) {
+            if (strlen(*pmyname) == in_name_len &&
+                strncasecmp(*pmyname, in_name, in_name_len) == 0) {
+                found = 1;
+                break;
+            }
+            pmyname++;
+        }
+        */
+
+        if (!found) {
+            DEBUG(2, L, "llmnr: not authoritative for name %s", in_name);
+            free(in_name);
+            return -1;
+        }
+
+        free(in_name);
 
 	/*
 	 * start building up the LLMNR response
@@ -383,11 +406,10 @@ int llmnr_recv(struct endpoint *ep)
 	socklen_t slen = sizeof sa;
 	ssize_t len = recvfrom(ep->sock, buf, sizeof(buf)-1, 0,
 				(struct sockaddr *)&sa, &slen);
-	char name[HOST_NAME_MAX + 1];
 
-	if (len > 0 && !gethostname(name, sizeof(name)-1)) {
+	if (len > 0) {
 		buf[len] = '\0';
-		llmnr_send_response(ep, &sa, buf, len, name);
+		llmnr_send_response(ep, &sa, buf, len);
 	}
 
 	return len;

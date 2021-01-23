@@ -1027,6 +1027,8 @@ int wsd_init(struct endpoint *ep)
 		!(netbiosname = get_smbparm(ep, "netbios name", hostname)))
 		return -1;
 
+	DEBUG(3, W, "netbios name %s, workgroup %s", netbiosname, workgroup);
+
 	if (!getresp_inited)
 		init_getresp();
 
