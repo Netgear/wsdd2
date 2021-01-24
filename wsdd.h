@@ -47,17 +47,35 @@
 #include <ifaddrs.h>
 #include <linux/rtnetlink.h>
 
-extern int debug_L, debug_W;
+/* wsd.c */
 extern char *netbiosname, *workgroup;
-extern int ifindex;
 
-#define DEBUG(x, y, ...)	\
-	do {	\
-		if (debug_##y >= (x)) {	\
-			fprintf(stderr, __VA_ARGS__);	\
-			putc('\n', stderr);		\
-			syslog(LOG_USER|LOG_ERR, __VA_ARGS__);	\
-		}		\
+/* wsdd2.c */
+extern int debug_L, debug_W;
+extern char *ifname;
+extern int ifindex;
+extern bool is_daemon;
+
+#define LOG(level, ...)						\
+	do {							\
+		if (is_daemon) {				\
+			syslog(LOG_USER | (level), __VA_ARGS__);\
+		} else {					\
+			fprintf(stderr, __VA_ARGS__);		\
+			putc('\n', stderr);			\
+		}						\
+	} while (0)
+
+#define DEBUG(x, y, ...)						\
+	do {								\
+		if (debug_##y >= (x)) {					\
+			if (is_daemon) {				\
+				syslog(LOG_USER | LOG_DEBUG, __VA_ARGS__);\
+			} else {					\
+				fprintf(stderr, __VA_ARGS__);		\
+				putc('\n', stderr);			\
+			}						\
+		}							\
 	} while (0)
 
 #ifndef HOST_NAME_MAX

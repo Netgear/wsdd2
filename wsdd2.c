@@ -23,8 +23,9 @@
 #include "wsdd.h"
 
 int debug_L, debug_W, debug_N;
-int ifindex = 0;
 char *ifname = NULL;
+int ifindex = 0;
+bool is_daemon = false;
 
 static int netlink_recv(struct endpoint *ep);
 
@@ -558,7 +559,6 @@ static void help(const char *prog, int ec, const char *fmt, ...)
 {
 	if (fmt) {
 		va_list ap;
-
 		va_start(ap, fmt);
 		vprintf(fmt, ap);
 		va_end(ap);
@@ -593,7 +593,6 @@ static void help(const char *prog, int ec, const char *fmt, ...)
 
 int main(int argc, char **argv)
 {
-	bool daemon = false;
 	int opt;
 	const char *prog = basename(*argv);
 	unsigned int ipv46 = 0, tcpudp = 0, llmnrwsdd = 0;
@@ -613,7 +612,7 @@ int main(int argc, char **argv)
 						"bad key:val '%s'\n", optarg);
 			break;
 		case 'd':
-			daemon = true;
+			is_daemon = true;
 			break;
 		case 'h':
 			help(prog, EXIT_SUCCESS, NULL);
@@ -669,7 +668,7 @@ int main(int argc, char **argv)
 	if (!tcpudp)
 		tcpudp	= _TCP | _UDP;
 
-	if (daemon) {
+	if (is_daemon) {
 		pid_t pid = fork();
 
 		if (pid < 0)
@@ -679,7 +678,7 @@ int main(int argc, char **argv)
 	}
 
 	openlog(prog, LOG_PID, LOG_USER);
-	syslog(LOG_USER | LOG_INFO, "starting.");
+	LOG(LOG_INFO, "starting.");
 
 again:
 	{}	/* Necessary to satisfy C syntax for statement labeling. */
@@ -760,7 +759,7 @@ again:
 					ifaddr, sv->port_num, ifa->ifa_name);
 
 				if (open_ep(&ep, sv, ifa)) {
-					syslog(LOG_USER | LOG_ERR, "error: %s: %s: %s",
+					LOG(LOG_ERR, "error: %s: %s: %s",
 						ep->service->name, ep->errstr, strerror(ep->_errno));
 					free(ep);
 					continue;
@@ -826,7 +825,7 @@ again:
 		} while (n >= 0 && !restart);
 
 		if (n < 0 && errno != EINTR) {
-			syslog(LOG_USER | LOG_WARNING, "%s: select: %s",
+			LOG(LOG_WARNING, "%s: select: %s",
 				__func__, strerror(errno));
 			rv = EXIT_FAILURE;
 		}
@@ -850,7 +849,7 @@ end:
 	}
 
 	if (badep) {
-		syslog(LOG_USER | LOG_ERR, "%s: %s: terminating.", badservice, badbad);
+		LOG(LOG_ERR, "%s: %s: terminating.", badservice, badbad);
 		closelog();
 		errno = baderrno;
 		err(EXIT_FAILURE, "%s: %s", badservice, badbad);
@@ -861,7 +860,7 @@ end:
 		goto again;
 	}
 
-	syslog(LOG_USER | LOG_INFO, "terminating.");
+	LOG(LOG_INFO, "terminating.");
 	closelog();
 	return rv;
 }
