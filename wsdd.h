@@ -101,8 +101,11 @@ struct endpoint {
 	size_t mlen, llen;
 	_saddr_t mcast, local;
 	union {
+#ifdef USE_ip_mreq
 		struct ip_mreq ip_mreq;
-		/* struct ip_mreqn ip_mreq; */
+#else
+		struct ip_mreqn ip_mreq;
+#endif
 		struct ipv6_mreq ipv6_mreq;
 	} mreq;
 	size_t mreqlen;

@@ -265,8 +265,7 @@ static const struct sock_params {
 	},
 };
 
-static int open_ep(struct endpoint **epp, struct service *sv,
-			const struct ifaddrs *ifa)
+static int open_ep(struct endpoint **epp, struct service *sv, const struct ifaddrs *ifa)
 {
 #define __FUNCTION__	"open_ep"
 	struct endpoint *ep = calloc(sizeof *ep, 1);
@@ -282,8 +281,7 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 	ep->type	= sv->type;
 	ep->protocol	= sv->protocol;
 
-	if (sv->family >= ARRAY_SIZE(sock_params) ||
-		!sock_params[ep->family].name) {
+	if (sv->family >= ARRAY_SIZE(sock_params) || !sock_params[ep->family].name) {
 		ep->errstr = __FUNCTION__ ": Unsupported address family";
 		ep->_errno = EINVAL;
 		return -1;
@@ -294,8 +292,7 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 			[SOCK_STREAM]	= "tcp",
 			[SOCK_DGRAM]	= "udp",
 		};
-		struct servent *se = getservbyname(sv->port_name,
-						servicename[sv->type]);
+		struct servent *se = getservbyname(sv->port_name, servicename[sv->type]);
 		ep->port = se ? ntohs(se->s_port) : 0;
 		if (!ep->port)
 			ep->port = sv->port_num;
@@ -308,18 +305,18 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 
 	const struct sock_params *sp = &sock_params[ep->family];
 
-	ep->mcast.ss.ss_family	= ep->family;
-	ep->mlen	= sp->llen;
+	ep->mcast.ss.ss_family = ep->family;
+	ep->mlen = sp->llen;
 
 	ep->local.ss.ss_family = ep->family;
-	ep->llen	= sp->llen;
+	ep->llen = sp->llen;
 
-	ep->mreqlen	= sp->mreqlen;
+	ep->mreqlen = sp->mreqlen;
 
 	switch (ep->family) {
 	case AF_INET:
 		if (sv->mcast_addr) {
-			ep->mcast.in.sin_port	= htons(ep->port);
+			ep->mcast.in.sin_port = htons(ep->port);
 			if (inet_pton(ep->family, sv->mcast_addr,
 				&ep->mcast.in.sin_addr.s_addr) != 1) {
 				ep->errstr = __FUNCTION__ ": Bad mcast IP addr";
@@ -327,14 +324,11 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 				return -1;
 			}
 			ep->mreq.ip_mreq.imr_multiaddr = ep->mcast.in.sin_addr;
-#if 0
-			ep->mreq.ip_mreq.imr_address	=
-				((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-			ep->mreq.ip_mreq.imr_ifindex =
-				if_nametoindex(ep->ifname);
+#ifdef USE_ip_mreq
+			ep->mreq.ip_mreq.imr_interface = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
 #else
-			ep->mreq.ip_mreq.imr_interface =
-				((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+			ep->mreq.ip_mreq.imr_address = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+			ep->mreq.ip_mreq.imr_ifindex = if_nametoindex(ep->ifname);
 #endif
 		}
 
@@ -342,6 +336,7 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 		ep->local.in.sin_addr.s_addr = htonl(INADDR_ANY);
 		ep->local.in.sin_port = htons(ep->port);
 		break;
+
 	case AF_INET6:
 		if (sv->mcast_addr) {
 			ep->mcast.in6.sin6_port = htons(ep->port);
@@ -352,16 +347,15 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 				ep->_errno = errno;
 				return -1;
 			}
-			ep->mreq.ipv6_mreq.ipv6mr_multiaddr =
-						ep->mcast.in6.sin6_addr;
-			ep->mreq.ipv6_mreq.ipv6mr_interface =
-						if_nametoindex(ep->ifname);
+			ep->mreq.ipv6_mreq.ipv6mr_multiaddr = ep->mcast.in6.sin6_addr;
+			ep->mreq.ipv6_mreq.ipv6mr_interface = if_nametoindex(ep->ifname);
 		}
 
 		//ep->local.in6 = *(struct sockaddr_in6 *)ifa->ifa_addr;
 		ep->local.in6.sin6_addr = in6addr_any;
 		ep->local.in6.sin6_port = htons(ep->port);
 		break;
+
 	case AF_NETLINK:
 		ep->local.nl.nl_groups = ep->service->nl_groups;
 		break;
@@ -375,30 +369,24 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 	}
 
 	const unsigned int enable = 1;
-	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEADDR,
-				&enable, sizeof enable);
+	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof enable);
 #ifdef SO_REUSEPORT
-	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEPORT,
-				&enable, sizeof enable);
+	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof enable);
 #endif
 #ifdef IPV6_V6ONLY
 	if ((ep->family == AF_INET6) &&
-		setsockopt(ep->sock, sp->ipproto_ip, IPV6_V6ONLY,
-				&enable, sizeof enable)) {
+		setsockopt(ep->sock, sp->ipproto_ip, IPV6_V6ONLY, &enable, sizeof enable)) {
 		ep->errstr = __FUNCTION__ ": IPV6_V6ONLY";
 		ep->_errno = errno;
 		close(ep->sock);
 		return -1;
 	}
 #endif
-
 #ifdef SO_BINDTODEVICE
-	if (!sv->mcast_addr &&
-			(ep->family == AF_INET || ep->family == AF_INET6)) {
+	if (!sv->mcast_addr && (ep->family == AF_INET || ep->family == AF_INET6)) {
 		struct ifreq ifr;
 		strncpy(ifr.ifr_name, ep->ifname, IFNAMSIZ-1);
-		if (setsockopt(ep->sock, SOL_SOCKET, SO_BINDTODEVICE,
-				&ifr, sizeof(ifr))) {
+		if (setsockopt(ep->sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr))) {
 			ep->errstr = __FUNCTION__ ": SO_BINDTODEVICE";
 			ep->_errno = errno;
 			close(ep->sock);
@@ -412,8 +400,7 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 		ep->_errno = errno;
 		close(ep->sock);
 		ep->sock = -1;
-		DEBUG(0, W, "%s: %s: %s",
-			ep->service->name, ep->errstr, strerror(ep->_errno));
+		DEBUG(0, W, "%s: %s: %s", ep->service->name, ep->errstr, strerror(ep->_errno));
 		return (ep->_errno == EADDRINUSE) ? 0 : -1;
 	}
 
@@ -421,25 +408,31 @@ static int open_ep(struct endpoint **epp, struct service *sv,
 		const unsigned int disable = 0, enable = 1;
 
 		if ((ep->family == AF_INET) &&
-			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO,
-					&enable, sizeof enable)) {
+			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO, &enable, sizeof enable)) {
 			ep->errstr = __FUNCTION__ ": IP_PKTINFO";
 			ep->_errno = errno;
 			close(ep->sock);
 			return -1;
 		}
+#ifdef IP_MULTICAST_IF
+		/* Set multicast sending interface to avoid error: wsdd-mcast-v4: wsd_send_soap_msg: send: No route to host */
+		if ((ep->family == AF_INET) &&
+			setsockopt(ep->sock, sp->ipproto_ip, IP_MULTICAST_IF, &ep->mreq, ep->mreqlen)) {
+			ep->errstr = __FUNCTION__ ": IP_MULTICAST_IF";
+			ep->_errno = errno;
+			close(ep->sock);
+			return -1;
+		}
+#endif
 		/* Disable loopback. */
-		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_multicast_loop,
-				&disable, sizeof disable)) {
+		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_multicast_loop, &disable, sizeof disable)) {
 			ep->errstr = __FUNCTION__ ": IP_MULTICAST_LOOP";
 			ep->_errno = errno;
 			close(ep->sock);
 			return -1;
 		}
-
 		/* Set inbound multicast. */
-		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_add_membership,
-				&ep->mreq, ep->mreqlen)) {
+		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_add_membership, &ep->mreq, ep->mreqlen)) {
 			ep->errstr = __FUNCTION__ ": IP_ADD_MEMBERSHIP";
 			ep->_errno = errno;
 			close(ep->sock);
@@ -535,13 +528,11 @@ static int netlink_recv(struct endpoint *ep)
 		return -1;
 	}
 
-
 	for (nh = (struct nlmsghdr *)buf;
 			NLMSG_OK(nh, msglen) && nh->nlmsg_type != NLMSG_DONE;
 			nh = NLMSG_NEXT(nh, msglen)) {
 		if (is_new_addr(nh) || nh->nlmsg_type == RTM_DELADDR) {
-			DEBUG(1, W,
-		"I/F address addition/change/deletion detected.");
+			DEBUG(1, W, "address addition/change/deletion detected.");
 			restart_service();
 			break;
 		}
@@ -706,15 +697,15 @@ again:
 
 	struct ifaddrs *ifaddrs;
 	fd_set fds;
-	int svn, rv = 0, nfds = -1;
+	int rv = 0, nfds = -1;
 	struct endpoint *ep, *badep = NULL;
 
 	FD_ZERO(&fds);
 
-	if (getifaddrs(&ifaddrs))
+	if (getifaddrs(&ifaddrs) != 0)
 		err(EXIT_FAILURE, "ifaddrs");
 
-	for (svn = 0; svn < ARRAY_SIZE(services); svn++) {
+	for (int svn = 0; svn < ARRAY_SIZE(services); svn++) {
 		struct service *sv = &services[svn];
 
 		if (!(ipv46 & _4) && sv->family == AF_INET)
@@ -730,27 +721,25 @@ again:
 		if (!(llmnrwsdd & _WSDD) && strstr(sv->name, "wsdd"))
 			continue;
 
-		struct ifaddrs *ifa;
-
 		if (sv->family == AF_INET || sv->family == AF_INET6) {
-			for (ifa = ifaddrs; ifa; ifa = ifa->ifa_next) {
+			for (struct ifaddrs *ifa = ifaddrs; ifa; ifa = ifa->ifa_next) {
 				if (!ifa->ifa_addr ||
 					(ifa->ifa_addr->sa_family != sv->family) ||
 					(ifa->ifa_flags & IFF_LOOPBACK) ||
 					(ifa->ifa_flags & IFF_SLAVE) ||
-					(ifname && strcmp(ifa->ifa_name, ifname)) ||
+					(ifname && strcmp(ifa->ifa_name, ifname) != 0) ||
 					(!strcmp(ifa->ifa_name, "LeafNets")) ||
 					(!strncmp(ifa->ifa_name, "docker", 6)) ||
 					(!strncmp(ifa->ifa_name, "veth", 4)) ||
 					(!strncmp(ifa->ifa_name, "tun", 3)) ||
 					(!strncmp(ifa->ifa_name, "ppp", 3)) ||
 					(!strncmp(ifa->ifa_name, "zt", 2)) ||
-					(sv->mcast_addr &&
-					!(ifa->ifa_flags & IFF_MULTICAST)))
+					(sv->mcast_addr && !(ifa->ifa_flags & IFF_MULTICAST)))
 					continue;
 
+				// skip bridge ports unless it specified on command line
 				if (!ifname) {
-					char path[sizeof("/sys/class/net//brport")+IFNAMSIZ];
+					char path[sizeof("/sys/class/net//brport") + IFNAMSIZ];
 					struct stat st;
 					snprintf(path, sizeof(path), "/sys/class/net/%s/brport", ifa->ifa_name);
 					if (stat(path, &st) == 0)
@@ -758,26 +747,26 @@ again:
 				}
 
 				char ifaddr[_ADDRSTRLEN];
-				void *addr =
-					_SIN_ADDR((_saddr_t *)ifa->ifa_addr);
+				const char *servicename[] = {
+					[SOCK_STREAM]	= "tcp",
+					[SOCK_DGRAM]	= "udp",
+					[SOCK_RAW]	= "raw",
+				};
+				void *addr = _SIN_ADDR((_saddr_t *)ifa->ifa_addr);
 
-				inet_ntop(ifa->ifa_addr->sa_family, addr,
-						ifaddr, sizeof ifaddr);
-
-				DEBUG(2, W, "%s %s %s@%s",
-					sv->name,
-					sv->mcast_addr ? sv->mcast_addr : "",
-					ifa->ifa_name,
-					ifaddr);
+				inet_ntop(ifa->ifa_addr->sa_family, addr, ifaddr, sizeof(ifaddr));
+				DEBUG(2, W, "%s %s %s %s:%d @ %s", sv->name, servicename[sv->type],
+					sv->mcast_addr ? sv->mcast_addr : "-",
+					ifaddr, sv->port_num, ifa->ifa_name);
 
 				if (open_ep(&ep, sv, ifa)) {
 					syslog(LOG_USER | LOG_ERR, "error: %s: %s: %s",
 						ep->service->name, ep->errstr, strerror(ep->_errno));
 					free(ep);
 					continue;
-				} else if (ep->sock < 0)
+				} else if (ep->sock < 0) {
 					free(ep);
-				else {
+				} else {
 					ep->next = endpoints;
 					endpoints = ep;
 					FD_SET(ep->sock, &fds);
@@ -787,6 +776,7 @@ again:
 			}
 			if (badep)
 				break;
+
 		} else if (sv->family == AF_NETLINK) {
 			const struct ifaddrs ifa = { .ifa_name = "netlink", };
 
@@ -794,9 +784,9 @@ again:
 			if (open_ep(&ep, sv, &ifa)) {
 				badep = ep;
 				break;
-			} else if (ep->sock < 0)
+			} else if (ep->sock < 0) {
 				free(ep);
-			else {
+			} else {
 				ep->next = endpoints;
 				endpoints = ep;
 				FD_SET(ep->sock, &fds);
@@ -822,14 +812,12 @@ again:
 			for (ep = endpoints; n > 0 && ep; ep = ep->next) {
 				if (!FD_ISSET(ep->sock, &rfds))
 					continue;
-				DEBUG(3, W, "dispatch %s_recv",
-					ep->service->name);
+				DEBUG(3, W, "dispatch %s_recv", ep->service->name);
 				n--;
 				if (ep->service->recv) {
 					int ret = ep->service->recv(ep);
 					if (ret < 0) {
-						DEBUG(1, W,
-					"Detected %s socket error, restarting",
+						DEBUG(1, W, "Detected %s socket error, restarting",
 							ep->service->name);
 						restart_service();
 					}
@@ -856,15 +844,13 @@ end:
 
 	while (endpoints) {
 		struct endpoint *tempep = endpoints->next;
-
 		close_ep(endpoints);
 		free(endpoints);
 		endpoints = tempep;
 	}
 
 	if (badep) {
-		syslog(LOG_USER | LOG_ERR, "%s: %s: terminating.",
-			badservice, badbad);
+		syslog(LOG_USER | LOG_ERR, "%s: %s: terminating.", badservice, badbad);
 		closelog();
 		errno = baderrno;
 		err(EXIT_FAILURE, "%s: %s", badservice, badbad);
