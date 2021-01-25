@@ -115,24 +115,22 @@ static struct service services[] = {
 		.family	= AF_NETLINK,
 		.type	= SOCK_RAW,
 		.protocol	= NETLINK_ROUTE,
-		.nl_groups	= RTMGRP_LINK |
-					RTMGRP_IPV4_IFADDR |
-					RTMGRP_IPV6_IFADDR,
+		.nl_groups	= RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR,
 		.recv	= netlink_recv,
 	},
 };
 
 int connected_if(const _saddr_t *sa, _saddr_t *ci)
 {
-	struct ifaddrs *ifaddr, *ifa;
 	int rv = -1;
+	struct ifaddrs *ifaddr;
 
 	if (getifaddrs(&ifaddr))
 		return -1;
 
 	ci->ss.ss_family = sa->ss.ss_family;
 
-	for (ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
+	for (struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
 		const uint8_t *_if, *_nm, *_sa;
 		uint8_t *_ca;
 		size_t alen;
@@ -516,9 +514,8 @@ static int netlink_recv(struct endpoint *ep)
 {
 #define __FUNCTION__	"netlink_recv"
 	char buf[4096];
-	struct iovec iov = { buf, sizeof buf };
 	struct sockaddr_nl sa;
-	struct nlmsghdr *nh;
+	struct iovec iov = { buf, sizeof buf };
 	struct msghdr msg = { &sa, sizeof sa, &iov, 1, NULL, 0, 0 };
 	ssize_t msglen = recvmsg(ep->sock, &msg, 0);
 
@@ -529,7 +526,7 @@ static int netlink_recv(struct endpoint *ep)
 		return -1;
 	}
 
-	for (nh = (struct nlmsghdr *)buf;
+	for (struct nlmsghdr *nh = (struct nlmsghdr *) buf;
 			NLMSG_OK(nh, msglen) && nh->nlmsg_type != NLMSG_DONE;
 			nh = NLMSG_NEXT(nh, msglen)) {
 		if (is_new_addr(nh) || nh->nlmsg_type == RTM_DELADDR) {
@@ -825,8 +822,7 @@ again:
 		} while (n >= 0 && !restart);
 
 		if (n < 0 && errno != EINTR) {
-			LOG(LOG_WARNING, "%s: select: %s",
-				__func__, strerror(errno));
+			LOG(LOG_WARNING, "%s: select: %s", __func__, strerror(errno));
 			rv = EXIT_FAILURE;
 		}
 	}

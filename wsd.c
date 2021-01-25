@@ -1089,9 +1089,9 @@ int wsd_recv(struct endpoint *ep)
 			DEBUG(3, W, "Unable to set receive timeout\n");
 		}
 		len = recv(fd, buf, sizeof buf - 1, 0);
-	} else
-		len = recvfrom(fd, buf, sizeof buf - 1, 0,
-				(struct sockaddr *)&sa, &slen);
+	} else {
+		len = recvfrom(fd, buf, sizeof buf - 1, 0, (struct sockaddr *)&sa, &slen);
+	}
 
 	if (len <= 0) {
 		if (ep->sock != fd)
@@ -1101,33 +1101,20 @@ int wsd_recv(struct endpoint *ep)
 
 	buf[len] = '\0';
 
-	{
-		char ip[_ADDRSTRLEN];
-		inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
-		DEBUG(3, W, "FROM: %s:%u (fd=%d)\n%s\n",
-			ip, _SIN_PORT(&sa), fd, buf);
-	}
-
 	if (ep->type == SOCK_STREAM) {
 		if (!strncmp(buf, "POST ", 5)) {
-			int status = wsd_parse_http_header(fd, ep,
-							buf, len, sizeof buf);
+			int status = wsd_parse_http_header(fd, ep, buf, len, sizeof buf);
 
 			{
 				char ip[_ADDRSTRLEN];
-				inet_ntop(sa.ss.ss_family,
-					_SIN_ADDR(&sa), ip, sizeof ip);
-				DEBUG(3, W, "BODY: %s:%u (fd=%d)\n%s\n",
-					ip, _SIN_PORT(&sa), fd, buf);
+				inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
+				DEBUG(3, W, "BODY: %s:%u (fd=%d)\n%s\n", ip, _SIN_PORT(&sa), fd, buf);
 			}
 
 			if (status > 200) {
 				send_http_resp_header(fd, ep, &sa, status, 0);
 				if (status >= 400)
-					wsd_send_soap_fault(fd, ep, &sa,
-							status,
-							ep->errstr,
-							ep->errstr);
+					wsd_send_soap_fault(fd, ep, &sa, status, ep->errstr, ep->errstr);
 				close(fd);
 				return 0;
 			}
@@ -1137,7 +1124,13 @@ int wsd_recv(struct endpoint *ep)
 	int rv = 0;
 	struct wsd_req_info *info = wsd_req_parse(buf, len);
 
-	DEBUG(2, W, "WSD_ACTION: %s", info ? info->action : "NONE");
+	{
+		char src[_ADDRSTRLEN];
+		inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), src, sizeof src);
+		DEBUG(2, W, "WSD_ACTION: %s %u %s %s", src, _SIN_PORT(&sa),
+		    ep->service->name, info ? info->action : "NONE");
+	}
+
 	switch (wsd_action_id(info)) {
 	case WSD_ACTION_PROBE:
 		rv = wsd_recv_action(wsd_send_probe_match, fd, ep, &sa, info);
@@ -1154,8 +1147,7 @@ int wsd_recv(struct endpoint *ep)
 	}
 
 	if (rv)
-		DEBUG(1, W,
-			"wsd_recv: %s: %s", ep->errstr, strerror(ep->_errno));
+		DEBUG(1, W, "wsd_recv: %s: %s", ep->errstr, strerror(ep->_errno));
 
 	wsd_req_destruct(info);
 	if (ep->sock != fd)
