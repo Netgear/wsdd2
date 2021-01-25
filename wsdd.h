@@ -148,7 +148,6 @@ struct service {
 extern int wsd_init(struct endpoint *);
 extern int wsd_recv(struct endpoint *);
 extern void wsd_exit(struct endpoint *);
-
 extern int wsd_http(struct endpoint *);
 
 extern int llmnr_init(struct endpoint *);
@@ -161,5 +160,7 @@ extern char *ip2uri(const char *);
 
 extern int set_getresp(const char *, const char **);
 extern void printBootInfoKeys(FILE *, int);
+
+extern int nl_debug(void *buf, int len);
 
 #endif

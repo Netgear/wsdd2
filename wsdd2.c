@@ -526,11 +526,13 @@ static int netlink_recv(struct endpoint *ep)
 		return -1;
 	}
 
+	nl_debug(buf, msglen);
+
 	for (struct nlmsghdr *nh = (struct nlmsghdr *) buf;
 			NLMSG_OK(nh, msglen) && nh->nlmsg_type != NLMSG_DONE;
 			nh = NLMSG_NEXT(nh, msglen)) {
 		if (is_new_addr(nh) || nh->nlmsg_type == RTM_DELADDR) {
-			DEBUG(1, W, "address addition/change/deletion detected.");
+			DEBUG(1, W, __FUNCTION__ ": address addition/change/deletion detected.");
 			restart_service();
 			break;
 		}

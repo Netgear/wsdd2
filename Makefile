@@ -7,7 +7,7 @@
 
 CFLAGS        = -Wall -Wextra -g -O0
 LDFLAGS       = -g
-OBJFILES      = wsdd2.o wsd.o llmnr.o
+OBJFILES      = wsdd2.o wsd.o llmnr.o nl_debug.o
 HEADERS       = wsdd.h wsd.h
 
 INSTALLPREFIX ?= $(PREFIX)/usr
@@ -19,11 +19,13 @@ SBININSTALLDIR = $(INSTALLPREFIX)/$(SBINDIR)
 MANINSTALLDIR = $(INSTALLPREFIX)/$(MANDIR)
 LIBINSTALLDIR = $(LIBDIR)
 
-all: wsdd2
+all: wsdd2 nl_debug
+
+nl_debug: CPPFLAGS+=-DMAIN
+nl_debug: nl_debug.c; $(LINK.c) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
 wsdd2: $(OBJFILES)
-
-$(OBJFILES) : $(HEADERS) Makefile
+$(OBJFILES): $(HEADERS) Makefile
 
 install: wsdd2
 	install -d $(DESTDIR)/$(SBININSTALLDIR)
@@ -34,4 +36,4 @@ install: wsdd2
 	install -m 0644 wsdd2.service $(DESTDIR)/$(LIBINSTALLDIR)/systemd/system
 
 clean:
-	rm -f wsdd2 $(OBJFILES)
+	rm -f wsdd2 nl_debug $(OBJFILES)
