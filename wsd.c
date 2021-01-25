@@ -3,8 +3,8 @@
   
    WSD protocol handler
 
-  	Copyright (c) 2016 NETGEAR
-  	Copyright (c) 2016 Hiro Sugawara
+	Copyright (c) 2016 NETGEAR
+	Copyright (c) 2016 Hiro Sugawara
   
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -92,7 +92,7 @@ static void uuid_random(char *uuid, size_t len)
 			mrand48() & 0xffff);
 }
 
-static void uuid_endpoint(char *uuid, size_t len)
+static void uuid_endpoint(char uuid[UUIDLEN])
 {
 	FILE *fp = fopen("/etc/machine-id", "r");
 	int c, i = 0;
@@ -368,7 +368,7 @@ static const char *wsd_tag_find(const char *xml,
 /*
  * Extremely simplified flat XML parser - practical enough for our purposes.
  */
-static struct wsd_req_info *wsd_req_parse(const char *xml, size_t length)
+static struct wsd_req_info *wsd_req_parse(const char *xml)
 {
 	static const char *action_tag[][2] = {
 		{"<wsa:Action>", "</wsa:Action>"},
@@ -476,7 +476,7 @@ static int wsd_send_msg(int fd, struct endpoint *ep, const _saddr_t *sa,
 					? sizeof sa->in
 					: sizeof sa->in6);
 
-	return !(ret == msglen);
+	return ret != (int) msglen;
 }
 
 /*
@@ -821,7 +821,7 @@ static int send_http_resp_header(int fd, struct endpoint *ep,
 	return rv;
 }
 
-char *netbiosname=NULL, *workgroup=NULL;
+char *netbiosname = NULL, *workgroup = NULL;
 
 static int wsd_send_get_response(int fd,
 				struct endpoint *ep,
@@ -884,6 +884,9 @@ static int wsd_send_get_response(int fd,
 				netbiosname,
 				workgroup
 			);
+
+	(void) ip; // silent "unused" warning
+
 	if (len <= 0) {
 		ep->errstr = "wsd_send_get_response: asprintf";
 		ep->_errno = errno;
@@ -962,7 +965,7 @@ again:
 	memmove(buf, p, len -= (p - buf));
 	buf[len] = '\0';
 
-	if (!eoh) {/* Have not reached end of header. */
+	if (!eoh) { /* Have not reached end of header. */
 		ssize_t len2 = recv(fd, buf + len, bsize - len - 1, 0);
 
 		if (len2 <= 0) {
@@ -987,7 +990,7 @@ again:
 
 		ssize_t len2 = recv(fd, buf + len, contentlength - len, 0);
 
-		if (len2 < contentlength - len) {
+		if (len2 < (ssize_t) (contentlength - len)) {
 			ep->errstr = __FUNCTION__ ": Data receiving error";
 			return 500;
 		}
@@ -1006,7 +1009,7 @@ int wsd_init(struct endpoint *ep)
 	if (!wsd_sequence[0])
 		uuid_random(wsd_sequence, sizeof wsd_sequence);
 	if (!wsd_endpoint[0]) {
-		uuid_endpoint(wsd_endpoint, UUIDLEN);
+		uuid_endpoint(wsd_endpoint);
 		if (!wsd_endpoint[0]) {
 			ep->errstr = "wsd_init: uuid_endpoint";
 			ep->_errno = errno;
@@ -1122,7 +1125,7 @@ int wsd_recv(struct endpoint *ep)
 	}
 
 	int rv = 0;
-	struct wsd_req_info *info = wsd_req_parse(buf, len);
+	struct wsd_req_info *info = wsd_req_parse(buf);
 
 	{
 		char src[_ADDRSTRLEN];
@@ -1159,4 +1162,3 @@ void wsd_exit(struct endpoint *ep)
 {
 	wsd_send_bye(ep);
 }
-

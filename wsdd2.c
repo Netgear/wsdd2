@@ -3,8 +3,8 @@
 
    Main file for general network handling.
   
-  	Copyright (c) 2016 NETGEAR
-  	Copyright (c) 2016 Hiro Sugawara
+	Copyright (c) 2016 NETGEAR
+	Copyright (c) 2016 Hiro Sugawara
   
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,7 +24,7 @@
 
 int debug_L, debug_W, debug_N;
 char *ifname = NULL;
-int ifindex = 0;
+unsigned ifindex = 0;
 bool is_daemon = false;
 
 static int netlink_recv(struct endpoint *ep);
@@ -182,12 +182,12 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 		}
 
 		rv = 0;
-		int i;
-		for (i = 0; i < alen; i++)
+		for (size_t i = 0; i < alen; i++) {
 			if ((_if[i] & _nm[i]) != (_sa[i] & _nm[i])) {
 				rv = -1;
 				break;
 			}
+		}
 		if (!rv) {
 			memcpy(_ca, _if, alen);
 			break;
@@ -280,7 +280,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	ep->type	= sv->type;
 	ep->protocol	= sv->protocol;
 
-	if (sv->family >= ARRAY_SIZE(sock_params) || !sock_params[ep->family].name) {
+	if (sv->family >= (int) ARRAY_SIZE(sock_params) || !sock_params[ep->family].name) {
 		ep->errstr = __FUNCTION__ ": Unsupported address family";
 		ep->_errno = EINVAL;
 		return -1;
@@ -654,7 +654,8 @@ int main(int argc, char **argv)
 			break;
 		case '?':
 			if (optopt == 'b' || optopt == 'i' || optopt == 'N' || optopt == 'G')
-				fprintf (stderr, "Option -%c requires an argument.\n", optopt);
+				fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+			/* ... fall through ... */
 		default:
 			help(prog, EXIT_FAILURE, "bad option '%c'\n", opt);
 		}
@@ -703,7 +704,7 @@ again:
 	if (getifaddrs(&ifaddrs) != 0)
 		err(EXIT_FAILURE, "ifaddrs");
 
-	for (int svn = 0; svn < ARRAY_SIZE(services); svn++) {
+	for (size_t svn = 0; svn < ARRAY_SIZE(services); svn++) {
 		struct service *sv = &services[svn];
 
 		if (!(ipv46 & _4) && sv->family == AF_INET)

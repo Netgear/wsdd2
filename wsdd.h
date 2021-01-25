@@ -53,7 +53,7 @@ extern char *netbiosname, *workgroup;
 /* wsdd2.c */
 extern int debug_L, debug_W;
 extern char *ifname;
-extern int ifindex;
+extern unsigned ifindex;
 extern bool is_daemon;
 
 #define LOG(level, ...)						\

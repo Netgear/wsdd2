@@ -3,8 +3,8 @@
   
    LLMNR responder
 
-  	Copyright (c) 2016 NETGEAR
-  	Copyright (c) 2016 Hiro Sugawara
+	Copyright (c) 2016 NETGEAR
+	Copyright (c) 2016 Hiro Sugawara
   
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -396,6 +396,7 @@ send:
 
 int llmnr_init(struct endpoint *ep)
 {
+	(void) ep; // silent "unused" warning
 	return 0;
 }
 
@@ -417,10 +418,11 @@ int llmnr_recv(struct endpoint *ep)
 
 int llmnr_timer(struct endpoint *ep)
 {
+	(void) ep; // silent "unused" warning
 	return 0;
 }
 
 void llmnr_exit(struct endpoint *ep)
 {
+	(void) ep; // silent "unused" warning
 }
-
