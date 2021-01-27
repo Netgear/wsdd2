@@ -47,11 +47,15 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 
 #include "wsdd.h"
+
+#include <stdio.h> // FILE, fopen(), fscanf(), snprintf()
+#include <stdlib.h> // realloc(), free()
+#include <unistd.h> // gethostname()
+#include <string.h> // memcpy(), strcat(), strdup()
+#include <errno.h> // errno, EINVAL
+#include <arpa/inet.h> // inet_ntop()
 
 /* set new debug class */
 #undef  DBGC_CLASS

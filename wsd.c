@@ -49,8 +49,22 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "wsdd.h"
-#include "wsd.h"
+
+#define _GNU_SOURCE // asprintf()
+
+#include "wsdd.h" // struct endpoint, DEBUG()
+#include "wsd.h" // struct wsd_req_info, WSD_ACTION_HELLO
+
+#include <stdbool.h> // bool
+#include <stdio.h> // FILE, fopen(), fscanf(), snprintf(), asprintf()
+#include <stdlib.h> // srand48()
+#include <unistd.h> // usleep()
+#include <string.h> // strcmp(), strdup()
+#include <ctype.h> // isdigit()
+#include <time.h> // time_t, time()
+#include <errno.h> // errno
+#include <sys/socket.h> // sendto()
+#include <arpa/inet.h> // inet_ntop()
 
 #define UUIDLEN	37
 

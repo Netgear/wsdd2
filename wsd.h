@@ -25,6 +25,8 @@
 #ifndef WSD_H
 #define WSD_H
 
+#include <sys/types.h> // size_t
+
 #define WSD_PORT		3702
 #define WSD_HTTP_PORT		WSD_PORT
 #define WSD_MCAST_ADDR		("239.255.255.250")

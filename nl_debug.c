@@ -1,36 +1,50 @@
 // gcc -Wall -Wextra -g -O0 -DMAIN -o nl_debug nl_debug.c && ./nl_debug
-#define _GNU_SOURCE
+
+/*
+   Netlink debug functions
+
+   Copyright (C) Volodymyr Prodan 2021
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+//#define _GNU_SOURCE // avoid conflict of <net/if.h> with <linux/if.h>
 //#define _POSIX_C_SOURCE 200809
+
+#include "nl_debug.h" // WLAN_EID_SSID
 
 #include <stdio.h> // printf()
 #include <stdarg.h> // va_start(), ...
 #include <unistd.h> // close()
 #include <string.h> // memset(), memcmp()
+#include <fcntl.h> // F_GETFL
 #include <ctype.h> // isprint()
 #include <errno.h> // errno
-
-//#include <fcntl.h> // F_GETFL
-//#include <time.h> // time()
-//#include <netdb.h> // getnameinfo()
-//#include <net/if.h> // if_indextoname()
-//#include <linux/if.h> // IFF_UP, ...
-
 #include <sys/socket.h> // PF_NETLINK
 #include <netinet/in.h> // in6_addr, INET6_ADDRSTRLEN
 #include <arpa/inet.h> // inet_ntop()
-
+#include <netdb.h> // getnameinfo()
 #include <net/if.h> // avoid conflict with <linux/if.h> included from <linux/wireless.h>
+#include <linux/if.h> // IFF_UP, ...
 #include <linux/wireless.h> // struct iw_event, SIOCGIWSCAN, ...
-
 #include <linux/netlink.h> // NETLINK_ROUTE
 #include <linux/rtnetlink.h> // RTM_GETADDR, IFA_ADDRESS, /usr/include/linux/if_addr.h
-
-#include "nl_debug.h"
 
 #ifdef MAIN
 #define debugf(...) do { printf(__VA_ARGS__); putchar('\n'); } while (0)
 #else
-#include "wsdd.h"
+#include "wsdd.h" // LOG()
 #define debugf(...) LOG(LOG_DEBUG, "nl_debug: " __VA_ARGS__)
 #endif
 

@@ -22,6 +22,28 @@
 
 #include "wsdd.h"
 
+#include <stddef.h> // NULL
+#include <stdbool.h> // bool
+#include <stdio.h> // snprintf()
+#include <stdlib.h> // calloc(), malloc(), free(), EXIT_FAILURE
+#include <string.h> // strncpy(), strchr()
+#include <unistd.h> // gethostname()
+#include <syslog.h> // openlog()
+#include <limits.h> // HOST_NAME_MAX
+#include <errno.h> // errno, ENOMEM
+#include <err.h> // err()
+#include <libgen.h> // basename()
+#include <sys/select.h> // FD_SET()
+#include <sys/socket.h> // SOCK_DGRAM
+#include <sys/stat.h> // stat()
+#include <netdb.h> // struct servent, getservbyname()
+#include <arpa/inet.h> // inet_ntop()
+#include <net/if.h> // if_indextoname()
+#include <netinet/in.h> // IPPROTO_IP
+#include <ifaddrs.h> // struct ifaddrs, getifaddrs()
+#include <linux/netlink.h> // NETLINK_ROUTE
+#include <linux/rtnetlink.h> // RTMGRP_LINK
+
 int debug_L, debug_W, debug_N;
 char *ifname = NULL;
 unsigned ifindex = 0;

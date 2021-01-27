@@ -21,31 +21,13 @@
 #ifndef _WSDD_H_
 #define _WSDD_H_
 
-#define _GNU_SOURCE
-
-#include <sys/types.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <unistd.h>
-
-#include <stdbool.h>
-#include <ctype.h>
-#include <err.h>
-#include <errno.h>
-
-#include <time.h>
-#include <syslog.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <arpa/inet.h>
-#include <net/if.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <ifaddrs.h>
-#include <linux/rtnetlink.h>
+#include <stdbool.h> // bool
+#include <stdio.h> // FILE, fopen(), fprintf()
+#include <syslog.h> // syslog()
+#include <net/if.h> // IFNAMSIZ
+#include <arpa/inet.h> // ntohs()
+#include <netinet/in.h> // struct sockaddr_in
+#include <linux/netlink.h> // struct sockaddr_nl
 
 /* wsd.c */
 extern char *netbiosname, *workgroup;
