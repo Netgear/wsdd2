@@ -1,10 +1,11 @@
 // gcc -Wall -Wextra -g -O0 -DMAIN -o nl_debug nl_debug.c && ./nl_debug
+#define _GNU_SOURCE
 //#define _POSIX_C_SOURCE 200809
 
 #include <stdio.h> // printf()
 #include <stdarg.h> // va_start(), ...
 #include <unistd.h> // close()
-#include <string.h> // memset()
+#include <string.h> // memset(), memcmp()
 #include <ctype.h> // isprint()
 #include <errno.h> // errno
 
@@ -18,8 +19,13 @@
 #include <netinet/in.h> // in6_addr, INET6_ADDRSTRLEN
 #include <arpa/inet.h> // inet_ntop()
 
+#include <net/if.h> // avoid conflict with <linux/if.h> included from <linux/wireless.h>
+#include <linux/wireless.h> // struct iw_event, SIOCGIWSCAN, ...
+
 #include <linux/netlink.h> // NETLINK_ROUTE
 #include <linux/rtnetlink.h> // RTM_GETADDR, IFA_ADDRESS, /usr/include/linux/if_addr.h
+
+#include "nl_debug.h"
 
 #ifdef MAIN
 #define debugf(...) do { printf(__VA_ARGS__); putchar('\n'); } while (0)
@@ -73,6 +79,23 @@ static void dump(void *p, size_t len, unsigned long start, const char *prefix)
         for (; j < 16; j++) outf(" ");
         outf("|\n");
     }
+}
+
+static void dump_str(void *p, size_t len)
+{
+    unsigned char *s = p;
+    outf("\"");
+    for (size_t i = 0; i < len; i++) {
+        if (isprint(s[i]) && s[i] != '"') outf("%c", s[i]);
+        else outf("\\x%02x", s[i]);
+    }
+    outf("\"");
+}
+
+static void dump_hex(void *p, size_t len)
+{
+    unsigned char *s = p;
+    for (size_t i = 0; i < len; i++) outf("%02x", s[i]);
 }
 
 static const char nlmsg_type_str[][16] = {
@@ -287,6 +310,388 @@ static struct {
     { 0, "" },
 };
 
+static const char iw_event_cmd_str[][40] = {
+    [SIOCSIWCOMMIT-SIOCIWFIRST]	= "SIOCSIWCOMMIT",		/* Commit pending changes to driver */
+    [SIOCGIWNAME-SIOCIWFIRST]	= "SIOCGIWNAME",		/* get name == wireless protocol */
+        /* SIOCGIWNAME is used to verify the presence of Wireless Extensions.
+         * Common values : "IEEE 802.11-DS", "IEEE 802.11-FH", "IEEE 802.11b"...
+         * Don't put the name of your driver there, it's useless. */
+    /* Basic operations */
+    [SIOCSIWNWID-SIOCIWFIRST]	= "SIOCSIWNWID",		/* set network id (pre-802.11) */
+    [SIOCGIWNWID-SIOCIWFIRST]	= "SIOCGIWNWID",		/* get network id (the cell) */
+    [SIOCSIWFREQ-SIOCIWFIRST]	= "SIOCSIWFREQ",		/* set channel/frequency (Hz) */
+    [SIOCGIWFREQ-SIOCIWFIRST]	= "SIOCGIWFREQ",		/* get channel/frequency (Hz) */
+    [SIOCSIWMODE-SIOCIWFIRST]	= "SIOCSIWMODE",		/* set operation mode */
+    [SIOCGIWMODE-SIOCIWFIRST]	= "SIOCGIWMODE",		/* get operation mode */
+    [SIOCSIWSENS-SIOCIWFIRST]	= "SIOCSIWSENS",		/* set sensitivity (dBm) */
+    [SIOCGIWSENS-SIOCIWFIRST]	= "SIOCGIWSENS",		/* get sensitivity (dBm) */
+    /* Informative stuff */
+    [SIOCSIWRANGE-SIOCIWFIRST]	= "SIOCSIWRANGE",		/* Unused */
+    [SIOCGIWRANGE-SIOCIWFIRST]	= "SIOCGIWRANGE",		/* Get range of parameters */
+    [SIOCSIWPRIV-SIOCIWFIRST]	= "SIOCSIWPRIV",		/* Unused */
+    [SIOCGIWPRIV-SIOCIWFIRST]	= "SIOCGIWPRIV",		/* get private ioctl interface info */
+    [SIOCSIWSTATS-SIOCIWFIRST]	= "SIOCSIWSTATS",		/* Unused */
+    [SIOCGIWSTATS-SIOCIWFIRST]	= "SIOCGIWSTATS",		/* Get /proc/net/wireless stats */
+        /* SIOCGIWSTATS is strictly used between user space and the kernel, and
+         * is never passed to the driver (i.e. the driver will never see it). */
+    /* Spy support (statistics per MAC address - used for Mobile IP support) */
+    [SIOCSIWSPY-SIOCIWFIRST]	= "SIOCSIWSPY",			/* set spy addresses */
+    [SIOCGIWSPY-SIOCIWFIRST]	= "SIOCGIWSPY",			/* get spy info (quality of link) */
+    [SIOCSIWTHRSPY-SIOCIWFIRST]	= "SIOCSIWTHRSPY",		/* set spy threshold (spy event) */
+    [SIOCGIWTHRSPY-SIOCIWFIRST]	= "SIOCGIWTHRSPY",		/* get spy threshold */
+    /* Access Point manipulation */
+    [SIOCSIWAP-SIOCIWFIRST]	= "SIOCSIWAP",			/* set access point MAC addresses */
+    [SIOCGIWAP-SIOCIWFIRST]	= "SIOCGIWAP",			/* get access point MAC addresses */
+    [SIOCGIWAPLIST-SIOCIWFIRST]	= "SIOCGIWAPLIST",		/* Deprecated in favor of scanning */
+    [SIOCSIWSCAN-SIOCIWFIRST]	= "SIOCSIWSCAN",		/* trigger scanning (list cells) */
+    [SIOCGIWSCAN-SIOCIWFIRST]	= "SIOCGIWSCAN",		/* get scanning results */
+    /* 802.11 specific support */
+    [SIOCSIWESSID-SIOCIWFIRST]	= "SIOCSIWESSID",		/* set ESSID (network name) */
+    [SIOCGIWESSID-SIOCIWFIRST]	= "SIOCGIWESSID",		/* get ESSID */
+    [SIOCSIWNICKN-SIOCIWFIRST]	= "SIOCSIWNICKN",		/* set node name/nickname */
+    [SIOCGIWNICKN-SIOCIWFIRST]	= "SIOCGIWNICKN",		/* get node name/nickname */
+        /* As the ESSID and NICKN are strings up to 32 bytes long, it doesn't fit
+         * within the 'iwreq' structure, so we need to use the 'data' member to
+         * point to a string in user space, like it is done for RANGE... */
+    /* Other parameters useful in 802.11 and some other devices */
+    [SIOCSIWRATE-SIOCIWFIRST]	= "SIOCSIWRATE",		/* set default bit rate (bps) */
+    [SIOCGIWRATE-SIOCIWFIRST]	= "SIOCGIWRATE",		/* get default bit rate (bps) */
+    [SIOCSIWRTS-SIOCIWFIRST]	= "SIOCSIWRTS",		/* set RTS/CTS threshold (bytes) */
+    [SIOCGIWRTS-SIOCIWFIRST]	= "SIOCGIWRTS",		/* get RTS/CTS threshold (bytes) */
+    [SIOCSIWFRAG-SIOCIWFIRST]	= "SIOCSIWFRAG",		/* set fragmentation thr (bytes) */
+    [SIOCGIWFRAG-SIOCIWFIRST]	= "SIOCGIWFRAG",		/* get fragmentation thr (bytes) */
+    [SIOCSIWTXPOW-SIOCIWFIRST]	= "SIOCSIWTXPOW",		/* set transmit power (dBm) */
+    [SIOCGIWTXPOW-SIOCIWFIRST]	= "SIOCGIWTXPOW",		/* get transmit power (dBm) */
+    [SIOCSIWRETRY-SIOCIWFIRST]	= "SIOCSIWRETRY",		/* set retry limits and lifetime */
+    [SIOCGIWRETRY-SIOCIWFIRST]	= "SIOCGIWRETRY",		/* get retry limits and lifetime */
+    /* Encoding stuff (scrambling, hardware security, WEP...) */
+    [SIOCSIWENCODE-SIOCIWFIRST]	= "SIOCSIWENCODE",		/* set encoding token & mode */
+    [SIOCGIWENCODE-SIOCIWFIRST]	= "SIOCGIWENCODE",		/* get encoding token & mode */
+    /* Power saving stuff (power management, unicast and multicast) */
+    [SIOCSIWPOWER-SIOCIWFIRST]	= "SIOCSIWPOWER",		/* set Power Management settings */
+    [SIOCGIWPOWER-SIOCIWFIRST]	= "SIOCGIWPOWER",		/* get Power Management settings */
+    /* WPA : Generic IEEE 802.11 informatiom element (e.g., for WPA/RSN/WMM).
+     * This ioctl uses struct iw_point and data buffer that includes IE id and len
+     * fields. More than one IE may be included in the request. Setting the generic
+     * IE to empty buffer (len=0) removes the generic IE from the driver. Drivers
+     * are allowed to generate their own WPA/RSN IEs, but in these cases, drivers
+     * are required to report the used IE as a wireless event, e.g., when
+     * associating with an AP. */
+    [SIOCSIWGENIE-SIOCIWFIRST]	= "SIOCSIWGENIE",		/* set generic IE */
+    [SIOCGIWGENIE-SIOCIWFIRST]	= "SIOCGIWGENIE",		/* get generic IE */
+    /* WPA : IEEE 802.11 MLME requests */
+    [SIOCSIWMLME-SIOCIWFIRST]	= "SIOCSIWMLME",		/* request MLME operation; uses struct iw_mlme */
+    /* WPA : Authentication mode parameters */
+    [SIOCSIWAUTH-SIOCIWFIRST]	= "SIOCSIWAUTH",		/* set authentication mode params */
+    [SIOCGIWAUTH-SIOCIWFIRST]	= "SIOCGIWAUTH",		/* get authentication mode params */
+    /* WPA : Extended version of encoding configuration */
+    [SIOCSIWENCODEEXT-SIOCIWFIRST] = "SIOCSIWENCODEEXT",		/* set encoding token & mode */
+    [SIOCGIWENCODEEXT-SIOCIWFIRST] = "SIOCGIWENCODEEXT",		/* get encoding token & mode */
+    /* WPA2 : PMKSA cache management */
+    [SIOCSIWPMKSA-SIOCIWFIRST]	= "SIOCSIWPMKSA",		/* PMKSA cache operation */
+
+    /* -------------------- DEV PRIVATE IOCTL LIST -------------------- */
+
+    /* These 32 ioctl are wireless device private, for 16 commands.
+     * Each driver is free to use them for whatever purpose it chooses,
+     * however the driver *must* export the description of those ioctls
+     * with SIOCGIWPRIV and *must* use arguments as defined below.
+     * If you don't follow those rules, DaveM is going to hate you (reason :
+     * it make mixed 32/64bit operation impossible).
+     */
+    [SIOCIWFIRSTPRIV-SIOCIWFIRST]	= "SIOCIWFIRSTPRIV",
+    [SIOCIWLASTPRIV-SIOCIWFIRST]	= "SIOCIWLASTPRIV",
+    /* Previously, we were using SIOCDEVPRIVATE, but we now have our
+     * separate range because of collisions with other tools such as
+     * 'mii-tool'.
+     * We now have 32 commands, so a bit more space ;-).
+     * Also, all 'even' commands are only usable by root and don't return the
+     * content of ifr/iwr to user (but you are not obliged to use the set/get
+     * convention, just use every other two command). More details in iwpriv.c.
+     * And I repeat : you are not forced to use them with iwpriv, but you
+     * must be compliant with it.
+     */
+
+    /* ----------------------- WIRELESS EVENTS ----------------------- */
+    /* Those are *NOT* ioctls, do not issue request on them !!! */
+    /* Most events use the same identifier as ioctl requests */
+
+    [IWEVTXDROP-SIOCIWFIRST]	= "IWEVTXDROP",		/* Packet dropped to excessive retry */
+    [IWEVQUAL-SIOCIWFIRST]	= "IWEVQUAL",		/* Quality part of statistics (scan) */
+    [IWEVCUSTOM-SIOCIWFIRST]	= "IWEVCUSTOM",		/* Driver specific ascii string */
+    [IWEVREGISTERED-SIOCIWFIRST]= "IWEVREGISTERED",	/* Discovered a new node (AP mode) */
+    [IWEVEXPIRED-SIOCIWFIRST]	= "IWEVEXPIRED",	/* Expired a node (AP mode) */
+    [IWEVGENIE-SIOCIWFIRST]	= "IWEVGENIE",		/* Generic IE (WPA, RSN, WMM, ..) (scan results); This includes id and
+                                                 * length fields. One IWEVGENIE may contain more than one IE. Scan
+                                                 * results may contain one or more IWEVGENIE events. */
+    [IWEVMICHAELMICFAILURE-SIOCIWFIRST] = "IWEVMICHAELMICFAILURE",	/* Michael MIC failure (struct iw_michaelmicfailure) */
+    [IWEVASSOCREQIE-SIOCIWFIRST]	= "IWEVASSOCREQIE",		/* IEs used in (Re)Association Request.
+                                             * The data includes id and length
+                                             * fields and may contain more than one
+                                             * IE. This event is required in
+                                             * Managed mode if the driver
+                                             * generates its own WPA/RSN IE. This
+                                             * should be sent just before
+                                             * IWEVREGISTERED event for the
+                                             * association. */
+    [IWEVASSOCRESPIE-SIOCIWFIRST]	= "IWEVASSOCRESPIE",		/* IEs used in (Re)Association
+                                             * Response. The data includes id and
+                                             * length fields and may contain more
+                                             * than one IE. This may be sent
+                                             * between IWEVASSOCREQIE and
+                                             * IWEVREGISTERED events for the
+                                             * association. */
+    [IWEVPMKIDCAND-SIOCIWFIRST]		= "IWEVPMKIDCAND",		/* PMKID candidate for RSN
+                                             * pre-authentication
+                                             * (struct iw_pmkid_cand) */
+};
+
+/* WLAN IE: Information Elements */
+
+struct wlan_ie {
+    u8 id;
+    u8 len;
+    u8 data[];
+} STRUCT_PACKED;
+
+struct wlan_ies { // struct iw_point without void *pointer;
+    u16 len; /* number of fields or size in bytes */
+    u16 flags; /* Optional params */
+    struct wlan_ie ies[];
+};
+
+/* Information Element IDs (IEEE Std 802.11-2016, 9.4.2.1, Table 9-77) */
+/* see aircrack-ng/third-party/ieee80211.h and hostap-git/src/common/ieee802_11_defs.h */
+
+static const char wlan_eid_str[][40] = { // max len(EID_VHT_OPERATING_MODE_NOTIFICATION) = 36
+    [WLAN_EID_SSID] = "EID_SSID",
+    [WLAN_EID_SUPP_RATES] = "EID_SUPP_RATES",
+    [WLAN_EID_DS_PARAMS] = "EID_DS_PARAMS",
+    [WLAN_EID_CF_PARAMS] = "EID_CF_PARAMS",
+    [WLAN_EID_TIM] = "EID_TIM",
+    [WLAN_EID_IBSS_PARAMS] = "EID_IBSS_PARAMS",
+    [WLAN_EID_COUNTRY] = "EID_COUNTRY",
+    [WLAN_EID_REQUEST] = "EID_REQUEST",
+    [WLAN_EID_BSS_LOAD] = "EID_BSS_LOAD",
+    [WLAN_EID_EDCA_PARAM_SET] = "EID_EDCA_PARAM_SET",
+    [WLAN_EID_TSPEC] = "EID_TSPEC",
+    [WLAN_EID_TCLAS] = "EID_TCLAS",
+    [WLAN_EID_SCHEDULE] = "EID_SCHEDULE",
+    [WLAN_EID_CHALLENGE] = "EID_CHALLENGE",
+    [WLAN_EID_CHALLENGE+1] = "EID_CHALLENGE17", /* 17-31 reserved for challenge text extension */
+    [WLAN_EID_CHALLENGE+2] = "EID_CHALLENGE18",
+    [WLAN_EID_CHALLENGE+3] = "EID_CHALLENGE19",
+    [WLAN_EID_CHALLENGE+4] = "EID_CHALLENGE20",
+    [WLAN_EID_CHALLENGE+5] = "EID_CHALLENGE21",
+    [WLAN_EID_CHALLENGE+6] = "EID_CHALLENGE22",
+    [WLAN_EID_CHALLENGE+7] = "EID_CHALLENGE23",
+    [WLAN_EID_CHALLENGE+8] = "EID_CHALLENGE24",
+    [WLAN_EID_CHALLENGE+9] = "EID_CHALLENGE25",
+    [WLAN_EID_CHALLENGE+10] = "EID_CHALLENGE26",
+    [WLAN_EID_CHALLENGE+11] = "EID_CHALLENGE27",
+    [WLAN_EID_CHALLENGE+12] = "EID_CHALLENGE28",
+    [WLAN_EID_CHALLENGE+13] = "EID_CHALLENGE29",
+    [WLAN_EID_CHALLENGE+14] = "EID_CHALLENGE30",
+    [WLAN_EID_CHALLENGE+15] = "EID_CHALLENGE31",
+    [WLAN_EID_PWR_CONSTRAINT] = "EID_PWR_CONSTRAINT",
+    [WLAN_EID_PWR_CAPABILITY] = "EID_PWR_CAPABILITY",
+    [WLAN_EID_TPC_REQUEST] = "EID_TPC_REQUEST",
+    [WLAN_EID_TPC_REPORT] = "EID_TPC_REPORT",
+    [WLAN_EID_SUPPORTED_CHANNELS] = "EID_SUPPORTED_CHANNELS",
+    [WLAN_EID_CHANNEL_SWITCH] = "EID_CHANNEL_SWITCH",
+    [WLAN_EID_MEASURE_REQUEST] = "EID_MEASURE_REQUEST",
+    [WLAN_EID_MEASURE_REPORT] = "EID_MEASURE_REPORT",
+    [WLAN_EID_QUIET] = "EID_QUIET",
+    [WLAN_EID_IBSS_DFS] = "EID_IBSS_DFS",
+    [WLAN_EID_ERP_INFO] = "EID_ERP_INFO",
+    [WLAN_EID_TS_DELAY] = "EID_TS_DELAY",
+    [WLAN_EID_TCLAS_PROCESSING] = "EID_TCLAS_PROCESSING",
+    [WLAN_EID_HT_CAP] = "EID_HT_CAP",
+    [WLAN_EID_QOS] = "EID_QOS",
+    [WLAN_EID_RSN] = "EID_RSN",
+    [WLAN_EID_EXT_SUPP_RATES] = "EID_EXT_SUPP_RATES",
+    [WLAN_EID_AP_CHANNEL_REPORT] = "EID_AP_CHANNEL_REPORT",
+    [WLAN_EID_NEIGHBOR_REPORT] = "EID_NEIGHBOR_REPORT",
+    [WLAN_EID_RCPI] = "EID_RCPI",
+    [WLAN_EID_MOBILITY_DOMAIN] = "EID_MOBILITY_DOMAIN",
+    [WLAN_EID_FAST_BSS_TRANSITION] = "EID_FAST_BSS_TRANSITION",
+    [WLAN_EID_TIMEOUT_INTERVAL] = "EID_TIMEOUT_INTERVAL",
+    [WLAN_EID_RIC_DATA] = "EID_RIC_DATA",
+    [WLAN_EID_DSE_REGISTERED_LOCATION] = "EID_DSE_REGISTERED_LOCATION",
+    [WLAN_EID_SUPPORTED_OPERATING_CLASSES] = "EID_SUPPORTED_OPERATING_CLASSES",
+    [WLAN_EID_EXT_CHANSWITCH_ANN] = "EID_EXT_CHANSWITCH_ANN",
+    [WLAN_EID_HT_OPERATION] = "EID_HT_OPERATION",
+    [WLAN_EID_SECONDARY_CHANNEL_OFFSET] = "EID_SECONDARY_CHANNEL_OFFSET",
+    [WLAN_EID_BSS_AVERAGE_ACCESS_DELAY] = "EID_BSS_AVERAGE_ACCESS_DELAY",
+    [WLAN_EID_ANTENNA] = "EID_ANTENNA",
+    [WLAN_EID_RSNI] = "EID_RSNI",
+    [WLAN_EID_MEASUREMENT_PILOT_TRANSMISSION] = "EID_MEASUREMENT_PILOT_TRANSMISSION",
+    [WLAN_EID_BSS_AVAILABLE_ADM_CAPA] = "EID_BSS_AVAILABLE_ADM_CAPA",
+    [WLAN_EID_BSS_AC_ACCESS_DELAY] = "EID_BSS_AC_ACCESS_DELAY", /* note: also used by WAPI */
+    [WLAN_EID_TIME_ADVERTISEMENT] = "EID_TIME_ADVERTISEMENT",
+    [WLAN_EID_RRM_ENABLED_CAPABILITIES] = "EID_RRM_ENABLED_CAPABILITIES",
+    [WLAN_EID_MULTIPLE_BSSID] = "EID_MULTIPLE_BSSID",
+    [WLAN_EID_20_40_BSS_COEXISTENCE] = "EID_20_40_BSS_COEXISTENCE",
+    [WLAN_EID_20_40_BSS_INTOLERANT] = "EID_20_40_BSS_INTOLERANT",
+    [WLAN_EID_OVERLAPPING_BSS_SCAN_PARAMS] = "EID_OVERLAPPING_BSS_SCAN_PARAMS",
+    [WLAN_EID_RIC_DESCRIPTOR] = "EID_RIC_DESCRIPTOR",
+    [WLAN_EID_MMIE] = "EID_MMIE",
+    [WLAN_EID_EVENT_REQUEST] = "EID_EVENT_REQUEST",
+    [WLAN_EID_EVENT_REPORT] = "EID_EVENT_REPORT",
+    [WLAN_EID_DIAGNOSTIC_REQUEST] = "EID_DIAGNOSTIC_REQUEST",
+    [WLAN_EID_DIAGNOSTIC_REPORT] = "EID_DIAGNOSTIC_REPORT",
+    [WLAN_EID_LOCATION_PARAMETERS] = "EID_LOCATION_PARAMETERS",
+    [WLAN_EID_NONTRANSMITTED_BSSID_CAPA] = "EID_NONTRANSMITTED_BSSID_CAPA",
+    [WLAN_EID_SSID_LIST] = "EID_SSID_LIST",
+    [WLAN_EID_MULTIPLE_BSSID_INDEX] = "EID_MULTIPLE_BSSID_INDEX",
+    [WLAN_EID_FMS_DESCRIPTOR] = "EID_FMS_DESCRIPTOR",
+    [WLAN_EID_FMS_REQUEST] = "EID_FMS_REQUEST",
+    [WLAN_EID_FMS_RESPONSE] = "EID_FMS_RESPONSE",
+    [WLAN_EID_QOS_TRAFFIC_CAPABILITY] = "EID_QOS_TRAFFIC_CAPABILITY",
+    [WLAN_EID_BSS_MAX_IDLE_PERIOD] = "EID_BSS_MAX_IDLE_PERIOD",
+    [WLAN_EID_TFS_REQ] = "EID_TFS_REQ",
+    [WLAN_EID_TFS_RESP] = "EID_TFS_RESP",
+    [WLAN_EID_WNMSLEEP] = "EID_WNMSLEEP",
+    [WLAN_EID_TIM_BROADCAST_REQUEST] = "EID_TIM_BROADCAST_REQUEST",
+    [WLAN_EID_TIM_BROADCAST_RESPONSE] = "EID_TIM_BROADCAST_RESPONSE",
+    [WLAN_EID_COLLOCATED_INTERFERENCE_REPORT] = "EID_COLLOCATED_INTERFERENCE_REPORT",
+    [WLAN_EID_CHANNEL_USAGE] = "EID_CHANNEL_USAGE",
+    [WLAN_EID_TIME_ZONE] = "EID_TIME_ZONE",
+    [WLAN_EID_DMS_REQUEST] = "EID_DMS_REQUEST",
+    [WLAN_EID_DMS_RESPONSE] = "EID_DMS_RESPONSE",
+    [WLAN_EID_LINK_ID] = "EID_LINK_ID",
+    [WLAN_EID_WAKEUP_SCHEDULE] = "EID_WAKEUP_SCHEDULE",
+    [WLAN_EID_CHANNEL_SWITCH_TIMING] = "EID_CHANNEL_SWITCH_TIMING",
+    [WLAN_EID_PTI_CONTROL] = "EID_PTI_CONTROL",
+    [WLAN_EID_TPU_BUFFER_STATUS] = "EID_TPU_BUFFER_STATUS",
+    [WLAN_EID_INTERWORKING] = "EID_INTERWORKING",
+    [WLAN_EID_ADV_PROTO] = "EID_ADV_PROTO",
+    [WLAN_EID_EXPEDITED_BANDWIDTH_REQ] = "EID_EXPEDITED_BANDWIDTH_REQ",
+    [WLAN_EID_QOS_MAP_SET] = "EID_QOS_MAP_SET",
+    [WLAN_EID_ROAMING_CONSORTIUM] = "EID_ROAMING_CONSORTIUM",
+    [WLAN_EID_EMERGENCY_ALERT_ID] = "EID_EMERGENCY_ALERT_ID",
+    [WLAN_EID_MESH_CONFIG] = "EID_MESH_CONFIG",
+    [WLAN_EID_MESH_ID] = "EID_MESH_ID",
+    [WLAN_EID_MESH_LINK_METRIC_REPORT] = "EID_MESH_LINK_METRIC_REPORT",
+    [WLAN_EID_CONGESTION_NOTIFICATION] = "EID_CONGESTION_NOTIFICATION",
+    [WLAN_EID_PEER_MGMT] = "EID_PEER_MGMT",
+    [WLAN_EID_MESH_CHANNEL_SWITCH_PARAMETERS] = "EID_MESH_CHANNEL_SWITCH_PARAMETERS",
+    [WLAN_EID_MESH_AWAKE_WINDOW] = "EID_MESH_AWAKE_WINDOW",
+    [WLAN_EID_BEACON_TIMING] = "EID_BEACON_TIMING",
+    [WLAN_EID_MCCAOP_SETUP_REQUEST] = "EID_MCCAOP_SETUP_REQUEST",
+    [WLAN_EID_MCCAOP_SETUP_REPLY] = "EID_MCCAOP_SETUP_REPLY",
+    [WLAN_EID_MCCAOP_ADVERTISEMENT] = "EID_MCCAOP_ADVERTISEMENT",
+    [WLAN_EID_MCCAOP_TEARDOWN] = "EID_MCCAOP_TEARDOWN",
+    [WLAN_EID_GANN] = "EID_GANN",
+    [WLAN_EID_RANN] = "EID_RANN",
+    [WLAN_EID_EXT_CAPAB] = "EID_EXT_CAPAB",
+    [WLAN_EID_PREQ] = "EID_PREQ",
+    [WLAN_EID_PREP] = "EID_PREP",
+    [WLAN_EID_PERR] = "EID_PERR",
+    [WLAN_EID_PXU] = "EID_PXU",
+    [WLAN_EID_PXUC] = "EID_PXUC",
+    [WLAN_EID_AMPE] = "EID_AMPE",
+    [WLAN_EID_MIC] = "EID_MIC",
+    [WLAN_EID_DESTINATION_URI] = "EID_DESTINATION_URI",
+    [WLAN_EID_U_APSD_COEX] = "EID_U_APSD_COEX",
+    [WLAN_EID_DMG_WAKEUP_SCHEDULE] = "EID_DMG_WAKEUP_SCHEDULE",
+    [WLAN_EID_EXTENDED_SCHEDULE] = "EID_EXTENDED_SCHEDULE",
+    [WLAN_EID_STA_AVAILABILITY] = "EID_STA_AVAILABILITY",
+    [WLAN_EID_DMG_TSPEC] = "EID_DMG_TSPEC",
+    [WLAN_EID_NEXT_DMG_ATI] = "EID_NEXT_DMG_ATI",
+    [WLAN_EID_DMG_CAPABILITIES] = "EID_DMG_CAPABILITIES",
+    [WLAN_EID_DMG_OPERATION] = "EID_DMG_OPERATION",
+    [WLAN_EID_DMG_BSS_PARAMETER_CHANGE] = "EID_DMG_BSS_PARAMETER_CHANGE",
+    [WLAN_EID_DMG_BEAM_REFINEMENT] = "EID_DMG_BEAM_REFINEMENT",
+    [WLAN_EID_CHANNEL_MEASUREMENT_FEEDBACK] = "EID_CHANNEL_MEASUREMENT_FEEDBACK",
+    [WLAN_EID_CCKM] = "EID_CCKM",
+    [WLAN_EID_AWAKE_WINDOW] = "EID_AWAKE_WINDOW",
+    [WLAN_EID_MULTI_BAND] = "EID_MULTI_BAND",
+    [WLAN_EID_ADDBA_EXTENSION] = "EID_ADDBA_EXTENSION",
+    [WLAN_EID_NEXTPCP_LIST] = "EID_NEXTPCP_LIST",
+    [WLAN_EID_PCP_HANDOVER] = "EID_PCP_HANDOVER",
+    [WLAN_EID_DMG_LINK_MARGIN] = "EID_DMG_LINK_MARGIN",
+    [WLAN_EID_SWITCHING_STREAM] = "EID_SWITCHING_STREAM",
+    [WLAN_EID_SESSION_TRANSITION] = "EID_SESSION_TRANSITION",
+    [WLAN_EID_DYNAMIC_TONE_PAIRING_REPORT] = "EID_DYNAMIC_TONE_PAIRING_REPORT",
+    [WLAN_EID_CLUSTER_REPORT] = "EID_CLUSTER_REPORT",
+    [WLAN_EID_REPLAY_CAPABILITIES] = "EID_REPLAY_CAPABILITIES",
+    [WLAN_EID_RELAY_TRANSFER_PARAM_SET] = "EID_RELAY_TRANSFER_PARAM_SET",
+    [WLAN_EID_BEAMLINK_MAINTENANCE] = "EID_BEAMLINK_MAINTENANCE",
+    [WLAN_EID_MULTIPLE_MAC_SUBLAYERS] = "EID_MULTIPLE_MAC_SUBLAYERS",
+    [WLAN_EID_U_PID] = "EID_U_PID",
+    [WLAN_EID_DMG_LINK_ADAPTATION_ACK] = "EID_DMG_LINK_ADAPTATION_ACK",
+    [WLAN_EID_MCCAOP_ADVERTISEMENT_OVERVIEW] = "EID_MCCAOP_ADVERTISEMENT_OVERVIEW",
+    [WLAN_EID_QUIET_PERIOD_REQUEST] = "EID_QUIET_PERIOD_REQUEST",
+    [WLAN_EID_QUIET_PERIOD_RESPONSE] = "EID_QUIET_PERIOD_RESPONSE",
+    [WLAN_EID_QMF_POLICY] = "EID_QMF_POLICY",
+    [WLAN_EID_ECAPC_POLICY] = "EID_ECAPC_POLICY",
+    [WLAN_EID_CLUSTER_TIME_OFFSET] = "EID_CLUSTER_TIME_OFFSET",
+    [WLAN_EID_INTRA_ACCESS_CATEGORY_PRIORITY] = "EID_INTRA_ACCESS_CATEGORY_PRIORITY",
+    [WLAN_EID_SCS_DESCRIPTOR] = "EID_SCS_DESCRIPTOR",
+    [WLAN_EID_QLOAD_REPORT] = "EID_QLOAD_REPORT",
+    [WLAN_EID_HCCA_TXOP_UPDATE_COUNT] = "EID_HCCA_TXOP_UPDATE_COUNT",
+    [WLAN_EID_HIGHER_LAYER_STREAM_ID] = "EID_HIGHER_LAYER_STREAM_ID",
+    [WLAN_EID_GCR_GROUP_ADDRESS] = "EID_GCR_GROUP_ADDRESS",
+    [WLAN_EID_ANTENNA_SECTOR_ID_PATTERN] = "EID_ANTENNA_SECTOR_ID_PATTERN",
+    [WLAN_EID_VHT_CAP] = "EID_VHT_CAP",
+    [WLAN_EID_VHT_OPERATION] = "EID_VHT_OPERATION",
+    [WLAN_EID_VHT_EXTENDED_BSS_LOAD] = "EID_VHT_EXTENDED_BSS_LOAD",
+    [WLAN_EID_VHT_WIDE_BW_CHSWITCH] = "EID_VHT_WIDE_BW_CHSWITCH",
+    [WLAN_EID_VHT_TRANSMIT_POWER_ENVELOPE] = "EID_VHT_TRANSMIT_POWER_ENVELOPE",
+    [WLAN_EID_VHT_CHANNEL_SWITCH_WRAPPER] = "EID_VHT_CHANNEL_SWITCH_WRAPPER",
+    [WLAN_EID_VHT_AID] = "EID_VHT_AID",
+    [WLAN_EID_VHT_QUIET_CHANNEL] = "EID_VHT_QUIET_CHANNEL",
+    [WLAN_EID_VHT_OPERATING_MODE_NOTIFICATION] = "EID_VHT_OPERATING_MODE_NOTIFICATION",
+    [WLAN_EID_UPSIM] = "EID_UPSIM",
+    [WLAN_EID_REDUCED_NEIGHBOR_REPORT] = "EID_REDUCED_NEIGHBOR_REPORT",
+    [WLAN_EID_TVHT_OPERATION] = "EID_TVHT_OPERATION",
+    [WLAN_EID_DEVICE_LOCATION] = "EID_DEVICE_LOCATION",
+    [WLAN_EID_WHITE_SPACE_MAP] = "EID_WHITE_SPACE_MAP",
+    [WLAN_EID_FTM_PARAMETERS] = "EID_FTM_PARAMETERS",
+    [WLAN_EID_VENDOR_SPECIFIC] = "EID_VENDOR_SPECIFIC",
+    [WLAN_EID_CAG_NUMBER] = "EID_CAG_NUMBER",
+    [WLAN_EID_AP_CSN] = "EID_AP_CSN",
+    [WLAN_EID_FILS_INDICATION] = "EID_FILS_INDICATION",
+    [WLAN_EID_DILS] = "EID_DILS",
+    [WLAN_EID_FRAGMENT] = "EID_FRAGMENT",
+    [WLAN_EID_RSNX] = "EID_RSNX",
+    [WLAN_EID_EXTENSION] = "EID_EXTENSION",
+};
+
+static const char wlan_eid_ext_str[][40] = { // max len(EID_VHT_OPERATING_MODE_NOTIFICATION) = 36
+    /* Element ID Extension (EID 255) values */
+    [WLAN_EID_EXT_ASSOC_DELAY_INFO] = "EID_EXT_ASSOC_DELAY_INFO",
+    [WLAN_EID_EXT_FILS_REQ_PARAMS] = "EID_EXT_FILS_REQ_PARAMS",
+    [WLAN_EID_EXT_FILS_KEY_CONFIRM] = "EID_EXT_FILS_KEY_CONFIRM",
+    [WLAN_EID_EXT_FILS_SESSION] = "EID_EXT_FILS_SESSION",
+    [WLAN_EID_EXT_FILS_HLP_CONTAINER] = "EID_EXT_FILS_HLP_CONTAINER",
+    [WLAN_EID_EXT_FILS_IP_ADDR_ASSIGN] = "EID_EXT_FILS_IP_ADDR_ASSIGN",
+    [WLAN_EID_EXT_KEY_DELIVERY] = "EID_EXT_KEY_DELIVERY",
+    [WLAN_EID_EXT_WRAPPED_DATA] = "EID_EXT_WRAPPED_DATA",
+    [WLAN_EID_EXT_FTM_SYNC_INFO] = "EID_EXT_FTM_SYNC_INFO",
+    [WLAN_EID_EXT_EXTENDED_REQUEST] = "EID_EXT_EXTENDED_REQUEST",
+    [WLAN_EID_EXT_ESTIMATED_SERVICE_PARAMS] = "EID_EXT_ESTIMATED_SERVICE_PARAMS",
+    [WLAN_EID_EXT_FILS_PUBLIC_KEY] = "EID_EXT_FILS_PUBLIC_KEY",
+    [WLAN_EID_EXT_FILS_NONCE] = "EID_EXT_FILS_NONCE",
+    [WLAN_EID_EXT_FUTURE_CHANNEL_GUIDANCE] = "EID_EXT_FUTURE_CHANNEL_GUIDANCE",
+    [WLAN_EID_EXT_OWE_DH_PARAM] = "EID_EXT_OWE_DH_PARAM",
+    [WLAN_EID_EXT_PASSWORD_IDENTIFIER] = "EID_EXT_PASSWORD_IDENTIFIER",
+    [WLAN_EID_EXT_HE_CAPABILITIES] = "EID_EXT_HE_CAPABILITIES",
+    [WLAN_EID_EXT_HE_OPERATION] = "EID_EXT_HE_OPERATION",
+    [WLAN_EID_EXT_HE_MU_EDCA_PARAMS] = "EID_EXT_HE_MU_EDCA_PARAMS",
+    [WLAN_EID_EXT_SPATIAL_REUSE] = "EID_EXT_SPATIAL_REUSE",
+    [WLAN_EID_EXT_OCV_OCI] = "EID_EXT_OCV_OCI",
+    [WLAN_EID_EXT_SHORT_SSID_LIST] = "EID_EXT_SHORT_SSID_LIST",
+    [WLAN_EID_EXT_HE_6GHZ_BAND_CAP] = "EID_EXT_HE_6GHZ_BAND_CAP",
+    [WLAN_EID_EXT_EDMG_CAPABILITIES] = "EID_EXT_EDMG_CAPABILITIES",
+    [WLAN_EID_EXT_EDMG_OPERATION] = "EID_EXT_EDMG_OPERATION",
+    [WLAN_EID_EXT_MSCS_DESCRIPTOR] = "EID_EXT_MSCS_DESCRIPTOR",
+    [WLAN_EID_EXT_TCLAS_MASK] = "EID_EXT_TCLAS_MASK",
+    [WLAN_EID_EXT_REJECTED_GROUPS] = "EID_EXT_REJECTED_GROUPS",
+    [WLAN_EID_EXT_ANTI_CLOGGING_TOKEN] = "EID_EXT_ANTI_CLOGGING_TOKEN",
+};
+
 static void print_rta_addr(int family, const struct rtattr *rta)
 {
     if (!family && RTA_PAYLOAD(rta) == 6)
@@ -327,6 +732,41 @@ static void print_iff(int flags)
         flags &= ~ifa_flags_descr[i].flag;
     }
     if (flags) outf("|%#x", flags);
+}
+
+/*
+ * Compare two ethernet addresses
+ */
+
+static int iw_ether_cmp(const struct ether_addr* eth1, const struct ether_addr* eth2)
+{
+    return memcmp(eth1, eth2, sizeof(*eth1));
+}
+
+/*
+ * Display an Wireless Access Point Socket Address in readable format.
+ * Note : 0x44 is an accident of history, that's what the Orinoco/PrismII
+ * chipset report, and the driver doesn't filter it.
+ */
+
+static void print_ap_addr(const struct sockaddr *sap)
+{
+    const struct ether_addr ether_zero = {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }};
+    const struct ether_addr ether_bcast = {{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }};
+    const struct ether_addr ether_hack = {{ 0x44, 0x44, 0x44, 0x44, 0x44, 0x44 }};
+    const struct ether_addr *ap = (const struct ether_addr *) sap->sa_data;
+
+    if (!iw_ether_cmp(ap, &ether_zero))
+        outf("Not-Associated");
+    else if (!iw_ether_cmp(ap, &ether_bcast))
+        outf("Invalid");
+    else if (!iw_ether_cmp(ap, &ether_hack))
+        outf("None");
+    else
+        outf("%02x:%02x:%02x:%02x:%02x:%02x",
+            ap->ether_addr_octet[0], ap->ether_addr_octet[1],
+            ap->ether_addr_octet[2], ap->ether_addr_octet[3],
+            ap->ether_addr_octet[4], ap->ether_addr_octet[5]);
 }
 
 int nl_debug(void *buf, int len)
@@ -450,9 +890,120 @@ int nl_debug(void *buf, int len)
                     outf(" %d", *val);
                     break;
                 }
+                case IFLA_WIRELESS: {
+                    // struct iw_event {
+                    //     __u16 len;                      /* Real length of this stuff (with header) */
+                    //     __u16 cmd;                      /* Wireless IOCTL */
+                    //     union iwreq_data u;             /* IOCTL fixed payload */
+                    // };
+                    // union iwreq_data {
+                    //     char            name[IFNAMSIZ]; /* Name : used to verify the presence of  wireless extensions. Name of the protocol/provider... */
+                    //     struct iw_point essid;          /* Extended network name */
+                    //     struct iw_param nwid;           /* network id (or domain - the cell) */
+                    //     struct iw_freq  freq;           /* frequency or channel : * 0-1000 = channel * > 1000 = frequency in Hz */
+                    //     struct iw_param sens;           /* signal level threshold */
+                    //     struct iw_param bitrate;        /* default bit rate */
+                    //     struct iw_param txpower;        /* default transmit power */
+                    //     struct iw_param rts;            /* RTS threshold */
+                    //     struct iw_param frag;           /* Fragmentation threshold */
+                    //     __u32           mode;           /* Operation mode */
+                    //     struct iw_param retry;          /* Retry limits & lifetime */
+                    //     struct iw_point encoding;       /* Encoding stuff : tokens */
+                    //     struct iw_param power;          /* PM duration/timeout */
+                    //     struct iw_quality qual;         /* Quality part of statistics */
+                    //     struct sockaddr ap_addr;        /* Access point address */
+                    //     struct sockaddr addr;           /* Destination address (hw/mac) */
+                    //     struct iw_param param;          /* Other small parameters */
+                    //     struct iw_point data;           /* Other large parameters */
+                    // };
+                    // struct iw_point {
+                    //     void *pointer; /* Pointer to the data  (in user space) */
+                    //     __u16 length;  /* number of fields or size in bytes (without header) */
+                    //     __u16 flags;   /* Optional params */
+                    // };
+
+                    struct iw_event *iw = RTA_DATA(rta);
+                    for (int iwlen = RTA_PAYLOAD(rta); iwlen > 0; iwlen -= iw->len,
+                            iw = (struct iw_event *) ((u8*)iw + iw->len)) {
+                        const char *iwcmd = iw_event_cmd_str[iw->cmd - SIOCIWFIRST];
+
+                        switch (iw->cmd) {
+                        // unsigned int
+                        case SIOCGIWSCAN: {
+                            outf(" %s:%u", iwcmd, iw->u.mode);
+                            break;
+                        }
+                        // hex
+                        case SIOCGIWAP: { // [16]
+                            outf(" AP:");
+                            print_ap_addr(&iw->u.ap_addr);
+                            //dump_hex(&iw->u, iwlen - sizeof(*iw) + sizeof(iw->u));
+                            break;
+                        }
+                        // struct wlan_ies (struct iw_point without pointer)
+                        case IWEVMICHAELMICFAILURE:
+                        case IWEVCUSTOM:
+                        case IWEVASSOCREQIE:
+                        case IWEVASSOCRESPIE:
+                        case IWEVPMKIDCAND: {
+                            outf(" %s:", iwcmd);
+                            struct wlan_ies *ies = (struct wlan_ies *) &iw->u.data;
+                            struct wlan_ie *ie = ies->ies;
+                            for (int ieslen = ies->len; ieslen > 0; ieslen -= sizeof(*ie) + ie->len,
+                                    ie = (struct wlan_ie *) (ie->data + ie->len)) {
+                                const char *ieid = wlan_eid_str[ie->id];
+                                switch (ie->id) {
+                                // ascii
+                                case WLAN_EID_SSID:
+                                    if (ie->len) outf(" %s=\"%.*s\"", ieid, ie->len, ie->data);
+                                    break;
+                                // hex
+                                case WLAN_EID_SUPP_RATES: // [6..8]
+                                case WLAN_EID_EXT_SUPP_RATES: // [4]
+                                case WLAN_EID_PWR_CAPABILITY: // [2]
+                                case WLAN_EID_SUPPORTED_CHANNELS: // [2]
+                                case WLAN_EID_RSN: // [20]
+                                case WLAN_EID_EXT_CAPAB: // [8]
+                                case WLAN_EID_VENDOR_SPECIFIC: // [7..9]
+                                case WLAN_EID_HT_CAP: // [26]
+                                    outf(" %s=", ieid);
+                                    dump_hex(ie->data, ie->len);
+                                    break;
+                                // 3-byte int
+                                case WLAN_EID_BSS_MAX_IDLE_PERIOD: { // [3]
+                                    unsigned v = ie->data[0] | ie->data[1] << 8 | ie->data[2] << 16;
+                                    outf(" %s:%u", ieid, v);
+                                    break;
+                                }
+                                case WLAN_EID_EXTENSION: {
+                                    const char *extid = wlan_eid_ext_str[ie->data[0]];
+                                    outf(" %s[%d]=", extid, ie->len - 1);
+                                    dump_str(&ie->data[1], ie->len - 1);
+                                    break;
+                                }
+                                default:
+                                    outf(" %s[%d]=", ieid, ie->len);
+                                    dump_str(ie->data, ie->len);
+                                    break;
+                                }
+
+                            }
+                            //outf("\n"); dump(iw, iwlen, 0, "\tIEs:\t");
+                            break;
+                        }
+                        default:
+                            outf("\n\t%s(cmd=%#x,iwlen=%d,len=%u):", iwcmd, iw->cmd, iwlen, iw->len);
+                            outf("\n"); dump(iw, iwlen, 0, "\t\t");
+                            break;
+                        }
+
+                    }
+
+                    //outf("\n"); dump(RTA_DATA(rta), RTA_PAYLOAD(rta), 0, "\t");
+                    break;
+                }
                 default:
-                    outf("\n");
-                    dump(RTA_DATA(rta), RTA_PAYLOAD(rta), 0, "\t");
+                    outf("\n"); dump(RTA_DATA(rta), RTA_PAYLOAD(rta), 0, "\t");
                     break;
                 }
             }
