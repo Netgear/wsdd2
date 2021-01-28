@@ -68,14 +68,8 @@
 
 static void dumphex(const char *label, const void *p, size_t len)
 {
-	if (debug_L >= 3) {
-		FILE *pp = popen("od -t x1c", "w");
-		printf("%s", label);
-		if (pp) {
-			fwrite(p, len, 1, pp);
-			pclose(pp);
-		}
-	}
+	if (debug_L >= 3)
+	    dump(p, len, 0, label);
 }
 
 static int llmnr_send_response(struct endpoint *ep,
@@ -95,7 +89,7 @@ static int llmnr_send_response(struct endpoint *ep,
 				? sizeof sa->in
 				: sizeof sa->in6;
 
-	dumphex("LLMNR INPUT:\n", in, inlen);
+	dumphex("LLMNR INPUT: ", in, inlen);
 
 	if (connected_if(sa, &ci)) {
 		char buf[_ADDRSTRLEN];
@@ -391,7 +385,7 @@ static int llmnr_send_response(struct endpoint *ep,
 		memcpy(out + out_name_len, &ci.in6.sin6_addr, len);
 	}
 send:
-	dumphex("LLMNR OUTPUT:\n", out, inlen + answer_len);
+	dumphex("LLMNR OUTPUT: ", out, inlen + answer_len);
 	ret = sendto(ep->sock, out, inlen + answer_len, 0,
 			(struct sockaddr *)sa, slen);
 	free(out);

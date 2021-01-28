@@ -80,9 +80,9 @@ void outf(const char *fmt, ...)
     }
 }
 
-static void dump(void *p, size_t len, unsigned long start, const char *prefix)
+void dump(const void *p, size_t len, unsigned long start, const char *prefix)
 {
-    unsigned char *s = p;
+    const unsigned char *s = p;
     for (size_t i = 0; i < len; i += 16) {
         size_t j, blen = len - i > 16 ? 16 : len - i;
         outf("%s[%08lx]", prefix, start + i);
@@ -95,9 +95,9 @@ static void dump(void *p, size_t len, unsigned long start, const char *prefix)
     }
 }
 
-static void dump_str(void *p, size_t len)
+void dump_str(const void *p, size_t len)
 {
-    unsigned char *s = p;
+    const unsigned char *s = p;
     outf("\"");
     for (size_t i = 0; i < len; i++) {
         if (isprint(s[i]) && s[i] != '"') outf("%c", s[i]);
@@ -106,9 +106,9 @@ static void dump_str(void *p, size_t len)
     outf("\"");
 }
 
-static void dump_hex(void *p, size_t len)
+void dump_hex(const void *p, size_t len)
 {
-    unsigned char *s = p;
+    const unsigned char *s = p;
     for (size_t i = 0; i < len; i++) outf("%02x", s[i]);
 }
 

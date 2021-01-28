@@ -143,6 +143,10 @@ extern char *ip2uri(const char *);
 extern int set_getresp(const char *, const char **);
 extern void printBootInfoKeys(FILE *, int);
 
-extern int nl_debug(void *buf, int len);
+// nl_debug.c
+int nl_debug(void *buf, int len);
+void dump(const void *p, size_t len, unsigned long start, const char *prefix);
+void dump_str(const void *p, size_t len);
+void dump_hex(const void *p, size_t len);
 
 #endif
