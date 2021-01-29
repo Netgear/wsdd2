@@ -26,7 +26,7 @@
 #include <stdbool.h> // bool
 #include <stdio.h> // snprintf()
 #include <stdlib.h> // calloc(), malloc(), free(), EXIT_FAILURE
-#include <string.h> // strncpy(), strchr()
+#include <string.h> // strncpy(), strchr(), strsignal()
 #include <unistd.h> // gethostname()
 #include <syslog.h> // openlog()
 #include <limits.h> // HOST_NAME_MAX
@@ -43,6 +43,10 @@
 #include <ifaddrs.h> // struct ifaddrs, getifaddrs()
 #include <linux/netlink.h> // NETLINK_ROUTE
 #include <linux/rtnetlink.h> // RTMGRP_LINK
+
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096 // PAGE_SIZE
+#endif
 
 int debug_L, debug_W, debug_N;
 char *ifname = NULL;
@@ -142,6 +146,11 @@ static struct service services[] = {
 	},
 };
 
+/*
+ * Find the interface address *ci which corresponds to received message sender address *sa
+ * in order to reply with the "right" IP address.
+ */
+
 int connected_if(const _saddr_t *sa, _saddr_t *ci)
 {
 	int rv = -1;
@@ -169,36 +178,29 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 			char name[_ADDRSTRLEN];
 
 			if (inet_ntop(ifa->ifa_addr->sa_family,
-					_SIN_ADDR((_saddr_t *)ifa->ifa_addr),
-					name, sizeof name))
-				printf("%s: %s: if=%s ",
-					__func__, ifa->ifa_name,name);
+					_SIN_ADDR((_saddr_t *)ifa->ifa_addr), name, sizeof name))
+				DEBUG(4, W, "%s: %s: if=%s ", __func__, ifa->ifa_name,name);
 			if (inet_ntop(sa->ss.ss_family,
 					_SIN_ADDR(sa), name, sizeof name))
-				printf("sc=%s ", name);
+				DEBUG(4, W, "sc=%s ", name);
 			if (inet_ntop(ifa->ifa_netmask->sa_family,
-					_SIN_ADDR((_saddr_t *)ifa->ifa_netmask),
-					name, sizeof name))
-				printf("nm=%s\n", name);
+					_SIN_ADDR((_saddr_t *)ifa->ifa_netmask), name, sizeof name))
+				DEBUG(4, W, "nm=%s\n", name);
 		}
 
 		switch (sa->ss.ss_family) {
 		case AF_INET:
-			_if = (uint8_t *)
-				&((_saddr_t *)ifa->ifa_addr)->in.sin_addr;
-			_nm = (uint8_t *)
-				&((_saddr_t *)ifa->ifa_netmask)->in.sin_addr;
-			_sa = (uint8_t *)&sa->in.sin_addr;
-			_ca = (uint8_t *)&ci->in.sin_addr;
+			_if = (uint8_t *) &((_saddr_t *)ifa->ifa_addr)->in.sin_addr;
+			_nm = (uint8_t *) &((_saddr_t *)ifa->ifa_netmask)->in.sin_addr;
+			_sa = (uint8_t *) &sa->in.sin_addr;
+			_ca = (uint8_t *) &ci->in.sin_addr;
 			alen = sizeof sa->in.sin_addr;
 			break;
 		case AF_INET6:
-			_if = (uint8_t *)
-				&((_saddr_t *)ifa->ifa_addr)->in6.sin6_addr;
-			_nm = (uint8_t *)
-				&((_saddr_t *)ifa->ifa_netmask)->in6.sin6_addr;
-			_sa = (uint8_t *)&sa->in6.sin6_addr;
-			_ca = (uint8_t *)&ci->in6.sin6_addr;
+			_if = (uint8_t *) &((_saddr_t *)ifa->ifa_addr)->in6.sin6_addr;
+			_nm = (uint8_t *) &((_saddr_t *)ifa->ifa_netmask)->in6.sin6_addr;
+			_sa = (uint8_t *) &sa->in6.sin6_addr;
+			_ca = (uint8_t *) &ci->in6.sin6_addr;
 			alen = sizeof sa->in6.sin6_addr;
 			break;
 		default:
@@ -220,10 +222,8 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 
 	if (debug_W >= 4) {
 		char name[_ADDRSTRLEN];
-
-		if (inet_ntop(ci->ss.ss_family, _SIN_ADDR(ci),
-				name, sizeof name))
-			printf("%s: ci=%s rv=%d\n\n", __func__, name, rv);
+		if (inet_ntop(ci->ss.ss_family, _SIN_ADDR(ci), name, sizeof name))
+			DEBUG(4, W, "%s: ci=%s rv=%d", __func__, name, rv);
 	}
 
 	freeifaddrs(ifaddr);
@@ -366,8 +366,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 			ep->mcast.in6.sin6_port = htons(ep->port);
 			if (inet_pton(ep->family, sv->mcast_addr,
 				ep->mcast.in6.sin6_addr.s6_addr) != 1) {
-				ep->errstr =
-					__FUNCTION__ ": Bad mcast IPv6 addr";
+				ep->errstr = __FUNCTION__ ": Bad mcast IPv6 addr";
 				ep->_errno = errno;
 				return -1;
 			}
@@ -431,6 +430,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	if (sv->mcast_addr) {
 		const unsigned int disable = 0, enable = 1;
 
+#ifdef IP_PKTINFO
 		if ((ep->family == AF_INET) &&
 			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO, &enable, sizeof enable)) {
 			ep->errstr = __FUNCTION__ ": IP_PKTINFO";
@@ -438,6 +438,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 			close(ep->sock);
 			return -1;
 		}
+#endif
 #ifdef IP_MULTICAST_IF
 		/* Set multicast sending interface to avoid error: wsdd-mcast-v4: wsd_send_soap_msg: send: No route to host */
 		if ((ep->family == AF_INET) &&
@@ -538,7 +539,7 @@ static bool is_new_addr(struct nlmsghdr *nh)
 static int netlink_recv(struct endpoint *ep)
 {
 #define __FUNCTION__	"netlink_recv"
-	char buf[4096];
+	char buf[PAGE_SIZE];
 	struct sockaddr_nl sa;
 	struct iovec iov = { buf, sizeof buf };
 	struct msghdr msg = { &sa, sizeof sa, &iov, 1, NULL, 0, 0 };
@@ -763,8 +764,8 @@ again:
 
 				// skip bridge ports unless it specified on command line
 				if (!ifname) {
-					char path[sizeof("/sys/class/net//brport") + IFNAMSIZ];
 					struct stat st;
+					char path[sizeof("/sys/class/net//brport") + IFNAMSIZ];
 					snprintf(path, sizeof(path), "/sys/class/net/%s/brport", ifa->ifa_name);
 					if (stat(path, &st) == 0)
 						continue;
@@ -804,7 +805,7 @@ again:
 		} else if (sv->family == AF_NETLINK) {
 			const struct ifaddrs ifa = { .ifa_name = "netlink", };
 
-			DEBUG(2, W, "%s @0x%x", sv->name, sv->nl_groups);
+			DEBUG(2, W, "%s 0x%x @ %s", sv->name, sv->nl_groups, ifa.ifa_name);
 			if (open_ep(&ep, sv, &ifa)) {
 				badep = ep;
 				break;
@@ -830,7 +831,6 @@ again:
 
 		do {
 			fd_set rfds = fds;
-
 			n = select(nfds + 1, &rfds, NULL, NULL, NULL);
 			DEBUG(3, W, "select: n=%d", n);
 			for (ep = endpoints; n > 0 && ep; ep = ep->next) {

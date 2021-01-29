@@ -57,10 +57,6 @@
 #include <errno.h> // errno, EINVAL
 #include <arpa/inet.h> // inet_ntop()
 
-/* set new debug class */
-#undef  DBGC_CLASS
-#define DBGC_CLASS wsdd_debug_level
-
 #define DNS_TYPE_ANY	0x00FF
 #define DNS_TYPE_A	0x0001	/* rfc 1035 */
 #define DNS_TYPE_AAAA	0x001C	/* rfc 3596 */
@@ -69,11 +65,10 @@
 static void dumphex(const char *label, const void *p, size_t len)
 {
 	if (debug_L >= 3)
-	    dump(p, len, 0, label);
+		dump(p, len, 0, label);
 }
 
-static int llmnr_send_response(struct endpoint *ep,
-				_saddr_t *sa,
+static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 				const uint8_t *in, size_t inlen)
 {
 	uint16_t qdcount, ancount, nscount;
@@ -85,18 +80,15 @@ static int llmnr_send_response(struct endpoint *ep,
 	size_t answer_len = 0;
 	int ret;
 	_saddr_t ci;
-	socklen_t slen = (sa->ss.ss_family == AF_INET)
-				? sizeof sa->in
-				: sizeof sa->in6;
+	socklen_t slen = (sa->ss.ss_family == AF_INET) ? sizeof sa->in : sizeof sa->in6;
 
 	dumphex("LLMNR INPUT: ", in, inlen);
 
 	if (connected_if(sa, &ci)) {
 		char buf[_ADDRSTRLEN];
-
-		DEBUG(1, L, "llmnr: connected_if: %s",
-			inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa),
-					buf, sizeof buf));
+		DEBUG(1, L, "llmnr: connected_if: %s: %s",
+			inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), buf, sizeof buf),
+			strerror(errno));
 		return -1;
 	}
 
@@ -119,6 +111,7 @@ static int llmnr_send_response(struct endpoint *ep,
 	 * +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
 	 */
 	errno = EINVAL;
+
 	/*
 	 * LLMNR packet format has a header of 12 bytes
 	 * plus at least 1 byte of question section
@@ -158,8 +151,7 @@ static int llmnr_send_response(struct endpoint *ep,
 	 */
 	qdcount = (in[4]*256) + in[5];
 	if (qdcount != 1) {
-		DEBUG(1, L, "llmnr: only a question entry allowed, found %u",
-			qdcount);
+		DEBUG(1, L, "llmnr: only one question entry allowed, found %u", qdcount);
 		return -1;
 	}
 
@@ -184,8 +176,7 @@ static int llmnr_send_response(struct endpoint *ep,
 		 * see section 4.1.4 of RFC 1035
 		 */
 		if (*in_name_p >= 0xC0) {
-			DEBUG(1, L, "llmnr: message compression not "
-				  "supported");
+			DEBUG(1, L, "llmnr: message compression not supported");
 			free(in_name);
 			return -1;
 		}
@@ -197,8 +188,7 @@ static int llmnr_send_response(struct endpoint *ep,
 		/* append to the whole name */
 		in_name_len += *in_name_p + 1;
 		if (in_name) {
-			in_name = realloc(in_name,
-					strlen(in_name) + strlen(in_label) + 2);
+			in_name = realloc(in_name, strlen(in_name) + strlen(in_label) + 2);
 			strcat(in_name, ".");
 			strcat(in_name, in_label);
 		} else {
@@ -248,8 +238,7 @@ static int llmnr_send_response(struct endpoint *ep,
 
 	char name[HOST_NAME_MAX + 1];
 	if (gethostname(name, sizeof(name)-1) == 0 &&
-            strlen(name) == in_name_len &&
-            strncasecmp(name, in_name, in_name_len) == 0)
+            strlen(name) == in_name_len && strncasecmp(name, in_name, in_name_len) == 0)
                 found = 1;
 
         /*
@@ -288,7 +277,6 @@ static int llmnr_send_response(struct endpoint *ep,
 	if ((qtype == DNS_TYPE_A && sa->ss.ss_family == AF_INET6) ||
 	    (qtype == DNS_TYPE_AAAA && sa->ss.ss_family == AF_INET)) {
 		answer_len = 0;
-	} else
 	/*
 	 * according to RFC 1035, answer section size will be:
 	 * - 2 bytes for pointer a name in query section (we are using a
@@ -299,13 +287,12 @@ static int llmnr_send_response(struct endpoint *ep,
 	 * - 2 bytes RDLENGTH ... up to here 12 bytes
 	 * - 4 bytes (AF_INET) or 16 bytes (AF_INET6) RDATA
 	 */
-	if (sa->ss.ss_family == AF_INET) {
+	} else if (sa->ss.ss_family == AF_INET) {
 		answer_len = 12 + sizeof(ci.in.sin_addr);
 	} else if (sa->ss.ss_family == AF_INET6) {
 		answer_len = 12 + sizeof(ci.in6.sin6_addr);
 	} else {
-		DEBUG(1, L, "llmnr: %s: %d", strerror(EAFNOSUPPORT),
-			sa->ss.ss_family);
+		DEBUG(1, L, "llmnr: %s: %d", strerror(EAFNOSUPPORT), sa->ss.ss_family);
 		return -1;
 	}
 
@@ -377,17 +364,15 @@ static int llmnr_send_response(struct endpoint *ep,
 
 	if (sa->ss.ss_family == AF_INET) {
 		size_t len = out[out_name_len++] = sizeof(ci.in.sin_addr);
-
 		memcpy(out + out_name_len, &ci.in.sin_addr, len);
 	} else {
 		size_t len = out[out_name_len++] = sizeof(ci.in6.sin6_addr);
-
 		memcpy(out + out_name_len, &ci.in6.sin6_addr, len);
 	}
 send:
 	dumphex("LLMNR OUTPUT: ", out, inlen + answer_len);
-	ret = sendto(ep->sock, out, inlen + answer_len, 0,
-			(struct sockaddr *)sa, slen);
+	ret = sendto(ep->sock, out, inlen + answer_len, 0, (struct sockaddr *)sa, slen);
+
 	free(out);
 	return ret;
 }
@@ -400,11 +385,11 @@ int llmnr_init(struct endpoint *ep)
 
 int llmnr_recv(struct endpoint *ep)
 {
-	uint8_t buf[10000];
+	uint8_t buf[9216+1]; // RFC 4795, Ethernet jumbo frame size
 	_saddr_t sa;
+
 	socklen_t slen = sizeof sa;
-	ssize_t len = recvfrom(ep->sock, buf, sizeof(buf)-1, 0,
-				(struct sockaddr *)&sa, &slen);
+	ssize_t len = recvfrom(ep->sock, buf, sizeof(buf)-1, 0, (struct sockaddr *)&sa, &slen);
 
 	if (len > 0) {
 		buf[len] = '\0';
