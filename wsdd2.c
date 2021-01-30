@@ -25,7 +25,10 @@
 #include <stddef.h> // NULL
 #include <stdbool.h> // bool
 #include <stdio.h> // snprintf()
-#include <stdlib.h> // calloc(), malloc(), free(), EXIT_FAILURE
+#include <stdlib.h> // calloc(), free(), EXIT_FAILURE
+#include <stdarg.h> // va_list, va_start()
+#include <setjmp.h> // jmp_buf, setjmp(), longjmp()
+#include <signal.h> // sig_atomic_t, SIGHUP, SIGINT, SIGTERM
 #include <string.h> // strncpy(), strchr(), strsignal()
 #include <unistd.h> // gethostname()
 #include <syslog.h> // openlog()
@@ -49,9 +52,10 @@
 #endif
 
 int debug_L, debug_W, debug_N;
-char *ifname = NULL;
-unsigned ifindex = 0;
 bool is_daemon = false;
+
+static char *ifname = NULL;
+static unsigned ifindex = 0;
 
 static int netlink_recv(struct endpoint *ep);
 
@@ -284,26 +288,30 @@ static const struct sock_params {
 	},
 	[AF_NETLINK] = {
 		.family	= AF_NETLINK,
-		.name	= "NETLINK",
-		.llen		= sizeof(struct sockaddr_nl),
+		.name = "NETLINK",
+		.llen = sizeof(struct sockaddr_nl),
 	},
+};
+
+static const char *servicename[] = {
+        [SOCK_STREAM]	= "tcp",
+        [SOCK_DGRAM]	= "udp",
 };
 
 static int open_ep(struct endpoint **epp, struct service *sv, const struct ifaddrs *ifa)
 {
 #define __FUNCTION__	"open_ep"
 	struct endpoint *ep = calloc(sizeof *ep, 1);
-
 	if (!(*epp = ep)) {
 		errno = ENOMEM;
-		err(EXIT_FAILURE, __FUNCTION__ ": malloc");
+		err(EXIT_FAILURE, __FUNCTION__ ": calloc");
 	}
 
-	strncpy(ep->ifname, ifa->ifa_name, sizeof(ep->ifname)-1);
-	ep->service	= sv;
-	ep->family	= sv->family;
-	ep->type	= sv->type;
-	ep->protocol	= sv->protocol;
+	strncpy(ep->ifname, ifa->ifa_name, sizeof(ep->ifname));
+	ep->service = sv;
+	ep->family = sv->family;
+	ep->type = sv->type;
+	ep->protocol = sv->protocol;
 
 	if (sv->family >= (int) ARRAY_SIZE(sock_params) || !sock_params[ep->family].name) {
 		ep->errstr = __FUNCTION__ ": Unsupported address family";
@@ -312,10 +320,6 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	}
 
 	if (sv->family == AF_INET || sv->family == AF_INET6) {
-		const char *servicename[] = {
-			[SOCK_STREAM]	= "tcp",
-			[SOCK_DGRAM]	= "udp",
-		};
 		struct servent *se = getservbyname(sv->port_name, servicename[sv->type]);
 		ep->port = se ? ntohs(se->s_port) : 0;
 		if (!ep->port)
@@ -384,7 +388,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		break;
 	}
 
-	ep->sock = socket(ep->family, ep->type, ep->protocol);
+	ep->sock = socket(ep->family, ep->type | SOCK_CLOEXEC, ep->protocol);
 	if (ep->sock < 0) {
 		ep->errstr = __FUNCTION__ ": Can't open socket";
 		ep->_errno = errno;
@@ -492,10 +496,6 @@ static void close_ep(struct endpoint *ep)
 	}
 	close(ep->sock);
 }
-
-#include <setjmp.h>
-#include <signal.h>
-#include <stdarg.h>
 
 static jmp_buf sigenv;
 volatile sig_atomic_t restart;
@@ -772,11 +772,6 @@ again:
 				}
 
 				char ifaddr[_ADDRSTRLEN];
-				const char *servicename[] = {
-					[SOCK_STREAM]	= "tcp",
-					[SOCK_DGRAM]	= "udp",
-					[SOCK_RAW]	= "raw",
-				};
 				void *addr = _SIN_ADDR((_saddr_t *)ifa->ifa_addr);
 
 				inet_ntop(ifa->ifa_addr->sa_family, addr, ifaddr, sizeof(ifaddr));

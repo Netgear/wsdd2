@@ -24,15 +24,15 @@
 
 #include "nl_debug.h" // WLAN_EID_SSID
 
-#include <stdio.h> // printf()
+#include <stdio.h> // stdout, printf()
 #include <stdarg.h> // va_start(), ...
-#include <unistd.h> // close()
+#include <unistd.h> // getpid(), close()
 #include <string.h> // memset(), memcmp()
 #include <fcntl.h> // F_GETFL
 #include <ctype.h> // isprint()
 #include <errno.h> // errno
-#include <sys/socket.h> // PF_NETLINK
-#include <netinet/in.h> // in6_addr, INET6_ADDRSTRLEN
+#include <sys/socket.h> // struct sockaddr, PF_NETLINK
+#include <netinet/in.h> // struct sockaddr_in{,6}, in{,6}_addr, INET{,6}_ADDRSTRLEN
 #include <arpa/inet.h> // inet_ntop()
 #include <netdb.h> // getnameinfo()
 #include <net/if.h> // avoid conflict with <linux/if.h> included from <linux/wireless.h>

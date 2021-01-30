@@ -407,12 +407,6 @@ int llmnr_recv(struct endpoint *ep)
 	return len;
 }
 
-int llmnr_timer(struct endpoint *ep)
-{
-	(void) ep; // silent "unused" warning
-	return 0;
-}
-
 void llmnr_exit(struct endpoint *ep)
 {
 	(void) ep; // silent "unused" warning

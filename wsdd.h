@@ -34,8 +34,6 @@ extern char *netbiosname, *workgroup;
 
 /* wsdd2.c */
 extern int debug_L, debug_W;
-extern char *ifname;
-extern unsigned ifindex;
 extern bool is_daemon;
 
 #define LOG(level, ...)						\
@@ -65,7 +63,7 @@ extern bool is_daemon;
 #endif
 
 #ifndef ARRAY_SIZE
-#define ARRAY_SIZE(a)	(sizeof(a)/sizeof(a[0]))
+#define ARRAY_SIZE(a)	(sizeof(a) / sizeof((a)[0]))
 #endif
 
 #ifndef max
@@ -127,21 +125,22 @@ struct service {
 	time_t interval;
 };
 
-extern int wsd_init(struct endpoint *);
-extern int wsd_recv(struct endpoint *);
-extern void wsd_exit(struct endpoint *);
-extern int wsd_http(struct endpoint *);
+// wsd.c
+int wsd_init(struct endpoint *);
+int wsd_recv(struct endpoint *);
+void wsd_exit(struct endpoint *);
 
-extern int llmnr_init(struct endpoint *);
-extern int llmnr_recv(struct endpoint *);
-extern int llmnr_timer(struct endpoint *);
-extern void llmnr_exit(struct endpoint *);
+int set_getresp(const char *, const char **);
+void printBootInfoKeys(FILE *, int);
 
-extern int connected_if(const _saddr_t *, _saddr_t *);
-extern char *ip2uri(const char *);
+// llmnr.c
+int llmnr_init(struct endpoint *);
+int llmnr_recv(struct endpoint *);
+void llmnr_exit(struct endpoint *);
 
-extern int set_getresp(const char *, const char **);
-extern void printBootInfoKeys(FILE *, int);
+// wsdd2.c
+int connected_if(const _saddr_t *, _saddr_t *);
+char *ip2uri(const char *);
 
 // nl_debug.c
 int nl_debug(void *buf, int len);
