@@ -189,10 +189,18 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 		in_name_len += *in_name_p + 1;
 		if (in_name) {
 			in_name = realloc(in_name, strlen(in_name) + strlen(in_label) + 2);
+			if (in_name == NULL) {
+                                DEBUG(1, L, "llmnr: realloc() failed");
+				return -1;
+			}
 			strcat(in_name, ".");
 			strcat(in_name, in_label);
 		} else {
 			in_name = strdup(in_label);
+			if (in_name == NULL) {
+                                DEBUG(1, L, "llmnr: strdup() failed");
+				return -1;
+			}
 		}
 
 		/* next label */
