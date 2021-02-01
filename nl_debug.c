@@ -1204,10 +1204,12 @@ int main(int argc, char *argv[])
     if (nls < 0) goto fail;
 
     int bufsize = 65536;
-    rc = setsockopt(nls, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof(bufsize));
-    if (rc < 0) goto fail;
     rc = setsockopt(nls, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize));
     if (rc < 0) goto fail;
+    rc = setsockopt(nls, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof(bufsize));
+    if (rc < 0) goto fail;
+    rc = setsockopt(nls, SOL_SOCKET, SO_RCVBUFFORCE, &bufsize, sizeof(bufsize));
+    if (rc < 0) perror("setsockopt(SO_RCVBUFFORCE)");
 
     const int enable = 1;
     rc = setsockopt(nls, SOL_NETLINK, NETLINK_NO_ENOBUFS, &enable, sizeof(enable));
@@ -1220,9 +1222,24 @@ int main(int argc, char *argv[])
     rc = bind(nls, (struct sockaddr *) &nlsaddr, sizeof(nlsaddr));
     if (rc < 0) goto fail;
 
+    // Connect to kernel (pid 0) as remote address.
+    struct sockaddr_nl nlraddr = { AF_NETLINK, 0, 0, 0 };
+    rc = connect(nls, (struct sockaddr *) &nlraddr, sizeof(nlraddr));
+    if (rc != 0) goto fail;
+
     size_t nlslen = sizeof(nlsaddr);
     rc = getsockname(nls, (struct sockaddr *) &nlsaddr, &nlslen);
     if (rc < 0) goto fail;
+
+    outf("getsockname: len=%d family=%d pid=%d groups=%#x\n", nlslen,
+        nlsaddr.nl_family, nlsaddr.nl_pid, nlsaddr.nl_groups);
+
+    size_t nlrlen = sizeof(nlraddr);
+    rc = getpeername(nls, (struct sockaddr *) &nlraddr, &nlrlen);
+    if (rc < 0) goto fail;
+
+    outf("getpeername: len=%d family=%d pid=%d groups=%#x\n", nlrlen,
+        nlraddr.nl_family, nlraddr.nl_pid, nlraddr.nl_groups);
 
     //rc = fcntl(nls, F_GETFL, 0);
     //if (rc < 0) goto fail;
@@ -1271,7 +1288,7 @@ int main(int argc, char *argv[])
     int done = 0;
     unsigned seqno = 0;
     struct iovec iov = { &buf, sizeof(buf) };
-    struct sockaddr_nl nladdr = { AF_NETLINK, 0, 0, 0 };
+    struct sockaddr_nl nladdr = { AF_NETLINK, 0, 0, 0 }; // send to kernel (pid 0) as remote address
     struct msghdr msg = { &nladdr, sizeof(nladdr), &iov, 1, NULL, 0, MSG_WAITALL };
 
     send_req(nls, seqno++);

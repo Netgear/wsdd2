@@ -400,6 +400,13 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 #ifdef SO_REUSEPORT
 	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof enable);
 #endif
+#ifdef SO_RCVBUFFORCE
+	int rcvbuf = 128 * 1024;
+	if ((ep->family == AF_NETLINK) &&
+		setsockopt(ep->sock, SOL_SOCKET, SO_RCVBUFFORCE, &rcvbuf, sizeof rcvbuf)) {
+		LOG(LOG_WARNING, "%s: SO_RCVBUFFORCE: %s", __FUNCTION__, strerror(errno));
+	}
+#endif
 #ifdef IPV6_V6ONLY
 	if ((ep->family == AF_INET6) &&
 		setsockopt(ep->sock, sp->ipproto_ip, IPV6_V6ONLY, &enable, sizeof enable)) {
