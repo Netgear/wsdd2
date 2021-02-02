@@ -832,11 +832,11 @@ again:
 		do {
 			fd_set rfds = fds;
 			n = select(nfds + 1, &rfds, NULL, NULL, NULL);
-			DEBUG(3, W, "select: n=%d", n);
+			DEBUG(4, W, "select: n=%d", n);
 			for (ep = endpoints; n > 0 && ep; ep = ep->next) {
 				if (!FD_ISSET(ep->sock, &rfds))
 					continue;
-				DEBUG(3, W, "dispatch %s_recv", ep->service->name);
+				DEBUG(3, W, "dispatch %s recv", ep->service->name);
 				n--;
 				if (ep->service->recv) {
 					int ret = ep->service->recv(ep);

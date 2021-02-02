@@ -414,15 +414,20 @@ static struct wsd_req_info *wsd_req_parse(const char *xml)
 	info->action = strndup(action, action_len);
 	info->msgid = strndup(msgid, msgid_len);
 
+	static const char *address_tag[][2] = { {"<wsa:Address>", "</wsa:Address>"}, {} };
+	size_t address_len;
+	const char *address = wsd_tag_find(xml, address_tag, &address_len);
+	info->address = address ? strndup(address, address_len) : NULL;
+
 	return info;
 }
 
 static void wsd_req_destruct(struct wsd_req_info *info)
 {
-	if (!info)
-		return;
+	if (!info) return;
 	free(info->action);
 	free(info->msgid);
+	free(info->address);
 	free(info);
 }
 
@@ -470,25 +475,24 @@ enum wsd_action wsd_action_id(const struct wsd_req_info *info)
 static int wsd_send_msg(int fd, struct endpoint *ep, const _saddr_t *sa,
 			const char *msg, size_t msglen, unsigned int rwait)
 {
-	char ip[_ADDRSTRLEN];
 	int ret;
 
-	inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), ip, sizeof ip);
-	DEBUG(3, W, "TO: %s:%u (fd=%d)\n%s\n", ip, _SIN_PORT(sa), fd, msg);
-
-	if (rwait) {
-		useconds_t us = random() % rwait;
-		usleep(us);
+	errno = 0;
+	if (ep->type == SOCK_STREAM) {
+		ret = send(fd, msg, msglen, MSG_NOSIGNAL);
+	} else {
+		if (rwait) {
+			useconds_t us = random() % rwait;
+			usleep(us);
+		}
+		ret = sendto(fd, msg, msglen, MSG_NOSIGNAL, (struct sockaddr *)sa,
+			(ep->family == AF_INET) ? sizeof sa->in : sizeof sa->in6);
 	}
 
-	if (ep->type == SOCK_STREAM)
-		ret = send(fd, msg, msglen, MSG_NOSIGNAL);
-	else
-		ret = sendto(fd, msg, msglen, MSG_NOSIGNAL,
-				(struct sockaddr *)sa,
-				(ep->family == AF_INET)
-					? sizeof sa->in
-					: sizeof sa->in6);
+	char ip[_ADDRSTRLEN];
+	inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), ip, sizeof ip);
+	DEBUG(3, W, "WSD-TO %s:%u (fd=%d,len=%d,sent=%d) '%s'\n", ip, _SIN_PORT(sa), fd,
+		msglen, ret, msg);
 
 	return ret != (int) msglen;
 }
@@ -539,8 +543,8 @@ static int wsd_send_soap_fault(int fd, struct endpoint *ep, _saddr_t *sa,
 	}
 
 	rv = wsd_send_msg(fd, ep, sa, s, len, 0);
-	free(s);
 
+	free(s);
 	return rv;
 }
 
@@ -615,7 +619,7 @@ static int wsd_send_soap_msg(int fd, struct endpoint *ep,
 	if (header)
 		rv = header(fd, ep, sa, status, msglen);
 
-	if (!rv) {
+	if (rv == 0) {
 		rv = wsd_send_msg(fd, ep, sa, msg, msglen, 0);
 		if (rv) {
 			ep->errstr = __FUNCTION__ ": send";
@@ -623,8 +627,8 @@ static int wsd_send_soap_msg(int fd, struct endpoint *ep,
 			rv = -1;
 		}
 	}
-	free(msg);
 
+	free(msg);
 	return rv;
 #undef __FUNCTION__
 }
@@ -649,10 +653,9 @@ static int wsd_send_hello(struct endpoint *ep)
 		return -1;
 	}
 
-	int rv = wsd_send_soap_msg(ep->sock, ep,
-				&ep->mcast, WSD_TO_DISCOVERY,
-				WSD_ACT_HELLO, NULL, body,
-				NULL, 0);
+	int rv = wsd_send_soap_msg(ep->sock, ep, &ep->mcast, WSD_TO_DISCOVERY,
+				WSD_ACT_HELLO, NULL, body, NULL, 0);
+
 	free(body);
 	return rv;
 }
@@ -677,12 +680,10 @@ static int wsd_send_bye(struct endpoint *ep)
 		return -1;
 	}
 
-	int rv = wsd_send_soap_msg(ep->sock, ep,
-				&ep->mcast, WSD_TO_DISCOVERY,
-				WSD_ACT_BYE, NULL, body,
-				NULL, 0);
-	free(body);
+	int rv = wsd_send_soap_msg(ep->sock, ep, &ep->mcast, WSD_TO_DISCOVERY,
+				WSD_ACT_BYE, NULL, body, NULL, 0);
 
+	free(body);
 	return rv;
 }
 
@@ -707,12 +708,7 @@ static int wsd_send_probe_match(int fd,
 		"</soap:Body>";
 	char *body, *uri_ip = ip2uri(ip);
 
-	if (!uri_ip ||
-		asprintf(&body, body_templ,
-			wsd_endpoint,
-			uri_ip,
-			ep->port,
-			wsd_endpoint) <= 0) {
+	if (!uri_ip || asprintf(&body, body_templ, wsd_endpoint, uri_ip, ep->port, wsd_endpoint) <= 0) {
 		ep->errstr = "wsd_send_probe_match: ip2uri/asprintf";
 		ep->_errno = errno;
 		free(uri_ip);
@@ -720,8 +716,8 @@ static int wsd_send_probe_match(int fd,
 	}
 
 	int rv = wsd_send_soap_msg(fd, ep, sa, WSD_TO_ANONYMOUS,
-				WSD_ACT_PROBEMATCH, info->msgid, body,
-				NULL, 0);
+				WSD_ACT_PROBEMATCH, info->msgid, body, NULL, 0);
+
 	free(uri_ip);
 	free(body);
 	return rv;
@@ -748,12 +744,7 @@ static int wsd_send_resolve_match(int fd,
 		"</soap:Body>";
 	char *body, *uri_ip = ip2uri(ip);
 
-	if (!uri_ip ||
-		asprintf(&body, body_templ,
-			wsd_endpoint,
-			uri_ip,
-			ep->port,
-			wsd_endpoint) <= 0) {
+	if (!uri_ip || asprintf(&body, body_templ, wsd_endpoint, uri_ip, ep->port, wsd_endpoint) <= 0) {
 		ep->errstr = "wsd_send_resolve_match: ip2uri/asprintf";
 		ep->_errno = errno;
 		free(uri_ip);
@@ -761,8 +752,8 @@ static int wsd_send_resolve_match(int fd,
 	}
 
 	int err = wsd_send_soap_msg(fd, ep, sa, WSD_TO_ANONYMOUS,
-				WSD_ACT_RESOLVEMATCH, info->msgid, body,
-				NULL, 0);
+				WSD_ACT_RESOLVEMATCH, info->msgid, body, NULL, 0);
+
 	free(uri_ip);
 	free(body);
 	return err;
@@ -812,8 +803,7 @@ static int send_http_resp_header(int fd, struct endpoint *ep,
 	time_t t;
 
 	time(&t);
-	strftime(time_str, sizeof(time_str), "%a, %d %b %Y %H:%M:%S GMT",
-		 gmtime(&t));
+	strftime(time_str, sizeof(time_str), "%a, %d %b %Y %H:%M:%S GMT", gmtime(&t));
 
 	char *s;
 	ssize_t len = asprintf(&s, resp_hdr_fmt, status_str, time_str, length);
@@ -824,13 +814,14 @@ static int send_http_resp_header(int fd, struct endpoint *ep,
 		return -1;
 	}
 
-	DEBUG(3, W, "HEADER:\n%s\n", s);
+	DEBUG(4, W, "---------- HEADER:\n%s----------\n", s);
 
-	if (wsd_send_msg(fd, ep, sa, s, len, 50000) != 0) {
+	if (wsd_send_msg(fd, ep, sa, s, len, WSD_RANDOM_DELAY) != 0) {
 		ep->errstr = "send_http_resp_header: send";
 		ep->_errno = errno;
 		rv = -1;
 	}
+
 	free(s);
 	return rv;
 }
@@ -908,8 +899,8 @@ static int wsd_send_get_response(int fd,
 	}
 
 	int rv = wsd_send_soap_msg(fd, ep, sa, WSD_TO_ANONYMOUS,
-					WXT_ACT_GETRESPONSE, info->msgid, body,
-					send_http_resp_header, 200);
+				WXT_ACT_GETRESPONSE, info->msgid, body, send_http_resp_header, 200);
+
 	free(body);
 	return rv;
 }
@@ -948,23 +939,25 @@ static int wsd_parse_http_header(int fd, struct endpoint *ep,
 	p = eol + 2;
 
 again:
-#define HEADER_IS(p,h)	(strncasecmp((p),(h),strlen((h)))? NULL :(p)+strlen(h)) 
+#define HEADER_IS(p,h) (strncasecmp((p), (h), strlen((h))) ? NULL : (p) + strlen(h))
 	while (*p && (eol = strstr(p, "\r\n")) != p) {
 		const char *val;
 
-		if (!eol)
-			break;
+		if (!eol) break;
 		*eol = '\0';
-		if ((val = HEADER_IS(p, "Content-Type: "))) {
+
+		if ((val = HEADER_IS(p, "Content-Type:"))) {
+		        while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
+				val++; // skip LWS
 			if (strcmp(val, "application/soap+xml")) {
-				ep->errstr = __FUNCTION__
-						": Unsupported Content-Type";
+				ep->errstr = __FUNCTION__ ": Unsupported Content-Type";
 				return 400;
 			}
-		} else if ((val = HEADER_IS(p, "Content-Length: "))) {
+		} else if ((val = HEADER_IS(p, "Content-Length:"))) {
+		        while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
+				val++; // skip LWS
 			if ((contentlength = atoi(val)) <= 0) {
-				ep->errstr = __FUNCTION__
-						": Invalid Content-Length";
+				ep->errstr = __FUNCTION__ ": Invalid Content-Length";
 				return 400;
 			}
 		}
@@ -1009,6 +1002,7 @@ again:
 			return 500;
 		}
 	}
+
 	buf[contentlength] = '\0';
 	return 200;
 #undef	__FUNCTION__
@@ -1037,11 +1031,9 @@ int wsd_init(struct endpoint *ep)
 		return -1;
 	}
 
-	if (!workgroup &&
-		!(workgroup = get_smbparm(ep, "workgroup", "WORKGROUP")))
+	if (!workgroup && !(workgroup = get_smbparm(ep, "workgroup", "WORKGROUP")))
 		return -1;
-	if (!netbiosname &&
-		!(netbiosname = get_smbparm(ep, "netbios name", hostname)))
+	if (!netbiosname && !(netbiosname = get_smbparm(ep, "netbios name", hostname)))
 		return -1;
 
 	DEBUG(3, W, "netbios name %s, workgroup %s", netbiosname, workgroup);
@@ -1071,8 +1063,7 @@ static int wsd_recv_action(int (*f)(int fd,
 	}
 
 	char ip[_ADDRSTRLEN];
-	void *src = (sa->ss.ss_family == AF_INET) ? (void *)&ci.in.sin_addr
-						: (void *)&ci.in6.sin6_addr;
+	void *src = (sa->ss.ss_family == AF_INET) ? (void *)&ci.in.sin_addr : (void *)&ci.in6.sin6_addr;
 
 	if (!inet_ntop(sa->ss.ss_family, src, ip, sizeof ip)) {
 		ep->errstr = "wsd_recv_action: inet_ntop";
@@ -1086,12 +1077,10 @@ static int wsd_recv_action(int (*f)(int fd,
 int wsd_recv(struct endpoint *ep)
 {
 	char buf[10000];
-	_saddr_t sa;
+	_saddr_t sa = {};
 	socklen_t slen = (ep->family == AF_INET) ? sizeof sa.in : sizeof sa.in6;
 	int fd = ep->sock;
 	ssize_t len;
-
-	memset(&sa, 0, slen);
 
 	if (ep->type == SOCK_STREAM) {
 		struct timeval to = { .tv_sec = 1, .tv_usec = 0};
@@ -1118,24 +1107,29 @@ int wsd_recv(struct endpoint *ep)
 
 	buf[len] = '\0';
 
-	if (ep->type == SOCK_STREAM) {
-		if (!strncmp(buf, "POST ", 5)) {
-			int status = wsd_parse_http_header(fd, ep, buf, len, sizeof buf);
+	{
+		char ip[_ADDRSTRLEN];
+		inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
+		DEBUG(3, W, "WSD-FROM %s:%u (fd=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa), fd, len, buf);
+	}
 
-			{
-				char ip[_ADDRSTRLEN];
-				inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
-				DEBUG(3, W, "BODY: %s:%u (fd=%d)\n%s\n", ip, _SIN_PORT(&sa), fd, buf);
-			}
+	if (ep->type == SOCK_STREAM && strncmp(buf, "POST ", 5) == 0) {
+		int status = wsd_parse_http_header(fd, ep, buf, len, sizeof buf);
 
-			if (status > 200) {
-				send_http_resp_header(fd, ep, &sa, status, 0);
-				if (status >= 400)
-					wsd_send_soap_fault(fd, ep, &sa, status, ep->errstr, ep->errstr);
-				if (ep->sock != fd)
-					close(fd);
-				return 0;
-			}
+		{
+			char ip[_ADDRSTRLEN];
+			inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
+			DEBUG(3, W, "WSD-BODY %s:%u (fd=%d,status=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa),
+				fd, status, strlen(buf), buf);
+		}
+
+		if (status > 200) {
+			send_http_resp_header(fd, ep, &sa, status, 0);
+			if (status >= 400)
+				wsd_send_soap_fault(fd, ep, &sa, status, ep->errstr, ep->errstr);
+			if (ep->sock != fd)
+				close(fd);
+			return 0;
 		}
 	}
 
@@ -1145,8 +1139,11 @@ int wsd_recv(struct endpoint *ep)
 	{
 		char src[_ADDRSTRLEN];
 		inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), src, sizeof src);
-		DEBUG(2, W, "WSD_ACTION: %s %u %s %s", src, _SIN_PORT(&sa),
-		    ep->service->name, info ? info->action : "NONE");
+		const char *action = info && info->action ? strrchr(info->action, '/') : "NONE";
+		if (!action) action = info->action;
+		const char *address = info && info->address ? info->address : NULL;
+		DEBUG(2, W, "WSD_ACTION: %s %u %s %s %s", src, _SIN_PORT(&sa),
+			ep->service->name, action, address);
 	}
 
 	switch (wsd_action_id(info)) {
