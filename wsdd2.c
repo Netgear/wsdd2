@@ -56,6 +56,7 @@ bool is_daemon = false;
 
 static char *ifname = NULL;
 static unsigned ifindex = 0;
+static struct ifaddrs *ifaddrs_list = NULL;
 
 static int netlink_recv(struct endpoint *ep);
 
@@ -141,7 +142,7 @@ static struct service services[] = {
 		.exit	= llmnr_exit,
 	},
 	{
-		.name	= "ifaddr-netlink-v4v6",
+		.name	= "netlink-v4v6",
 		.family	= AF_NETLINK,
 		.type	= SOCK_RAW,
 		.protocol	= NETLINK_ROUTE,
@@ -158,16 +159,15 @@ static struct service services[] = {
 int connected_if(const _saddr_t *sa, _saddr_t *ci)
 {
 	int rv = -1;
-	struct ifaddrs *ifaddr;
 
-	if (getifaddrs(&ifaddr)) {
+	if (ifaddrs_list == NULL) {
 		errno = EADDRNOTAVAIL;
 		return -1;
 	}
 
 	ci->ss.ss_family = sa->ss.ss_family;
 
-	for (struct ifaddrs *ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
+	for (struct ifaddrs *ifa = ifaddrs_list; ifa; ifa = ifa->ifa_next) {
 		const uint8_t *_if, *_nm, *_sa;
 		uint8_t *_ca;
 		size_t alen;
@@ -230,9 +230,7 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 			DEBUG(4, W, "%s: ci=%s rv=%d", __func__, name, rv);
 	}
 
-	freeifaddrs(ifaddr);
-	if (rv)
-		errno = EADDRNOTAVAIL;
+	if (rv) errno = EADDRNOTAVAIL;
 	return rv;
 }
 
@@ -626,7 +624,7 @@ static void help(const char *prog, int ec, const char *fmt, ...)
 int main(int argc, char **argv)
 {
 	int opt;
-	const char *prog = basename(*argv);
+	const char *prog = basename(argv[0]);
 	unsigned int ipv46 = 0, tcpudp = 0, llmnrwsdd = 0;
 
 	while ((opt = getopt(argc, argv, "?46LWb:dhltuwi:N:G:")) != -1) {
@@ -727,15 +725,17 @@ again:
 		err(EXIT_FAILURE, "cannot install signal handler.");
 	}
 
-	struct ifaddrs *ifaddrs;
+	// Refresh ifaddrs list
+	if (ifaddrs_list != NULL)
+		freeifaddrs(ifaddrs_list);
+	if (getifaddrs(&ifaddrs_list) != 0)
+		err(EXIT_FAILURE, "getifaddrs()");
+
 	fd_set fds;
 	int rv = 0, nfds = -1;
 	struct endpoint *ep, *badep = NULL;
 
 	FD_ZERO(&fds);
-
-	if (getifaddrs(&ifaddrs) != 0)
-		err(EXIT_FAILURE, "ifaddrs");
 
 	for (size_t svn = 0; svn < ARRAY_SIZE(services); svn++) {
 		struct service *sv = &services[svn];
@@ -754,7 +754,7 @@ again:
 			continue;
 
 		if (sv->family == AF_INET || sv->family == AF_INET6) {
-			for (struct ifaddrs *ifa = ifaddrs; ifa; ifa = ifa->ifa_next) {
+			for (struct ifaddrs *ifa = ifaddrs_list; ifa; ifa = ifa->ifa_next) {
 				if (!ifa->ifa_addr ||
 					(ifa->ifa_addr->sa_family != sv->family) ||
 					(ifa->ifa_flags & IFF_LOOPBACK) ||
@@ -823,8 +823,6 @@ again:
 		}
 	}
 
-	freeifaddrs(ifaddrs);
-
 	if (!badep) {
 		int n = 0;
 
@@ -884,6 +882,11 @@ end:
 	if (restart == 1) {
 		restart = 0;
 		goto again;
+	}
+
+	if (ifaddrs_list != NULL) {
+		freeifaddrs(ifaddrs_list);
+		ifaddrs_list = NULL;
 	}
 
 	LOG(LOG_INFO, "terminating.");
