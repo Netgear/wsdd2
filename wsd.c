@@ -826,7 +826,7 @@ static int send_http_resp_header(int fd, struct endpoint *ep,
 
 	DEBUG(3, W, "HEADER:\n%s\n", s);
 
-	if (wsd_send_msg(fd, ep, sa, s, len, 50000)) {
+	if (wsd_send_msg(fd, ep, sa, s, len, 50000) != 0) {
 		ep->errstr = "send_http_resp_header: send";
 		ep->_errno = errno;
 		rv = -1;
@@ -1132,7 +1132,8 @@ int wsd_recv(struct endpoint *ep)
 				send_http_resp_header(fd, ep, &sa, status, 0);
 				if (status >= 400)
 					wsd_send_soap_fault(fd, ep, &sa, status, ep->errstr, ep->errstr);
-				close(fd);
+				if (ep->sock != fd)
+					close(fd);
 				return 0;
 			}
 		}
