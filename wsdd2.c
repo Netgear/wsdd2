@@ -428,7 +428,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		const unsigned int disable = 0, enable = 1;
 
 #ifdef IP_PKTINFO
-		if ((ep->family == AF_INET) &&
+		if (ep->family == AF_INET && ep->type == SOCK_DGRAM &&
 			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO, &enable, sizeof(enable))) {
 			ep->errstr = __FUNCTION__ ": IP_PKTINFO";
 			ep->_errno = errno;
@@ -437,7 +437,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		}
 #endif
 #ifdef IPV6_RECVPKTINFO
-		if ((ep->family == AF_INET6) &&
+		if (ep->family == AF_INET6 && ep->type == SOCK_DGRAM &&
 			setsockopt(ep->sock, sp->ipproto_ip, IPV6_RECVPKTINFO, &enable, sizeof(enable))) {
 			ep->errstr = __FUNCTION__ ": IPV6_RECVPKTINFO";
 			ep->_errno = errno;
@@ -447,7 +447,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 #endif
 #ifdef IP_MULTICAST_IF
 		/* Set multicast sending interface to avoid error: wsdd-mcast-v4: wsd_send_soap_msg: send: No route to host */
-		if ((ep->family == AF_INET) &&
+		if (ep->family == AF_INET && ep->type == SOCK_DGRAM &&
 			setsockopt(ep->sock, sp->ipproto_ip, IP_MULTICAST_IF, &ep->mreq, ep->mreqlen)) {
 			ep->errstr = __FUNCTION__ ": IP_MULTICAST_IF";
 			ep->_errno = errno;
@@ -457,7 +457,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 #endif
 #ifdef IPV6_MULTICAST_IF
 		/* Set multicast sending interface for IPv6 */
-		if ((ep->family == AF_INET6) &&
+		if (ep->family == AF_INET6 && ep->type == SOCK_DGRAM &&
 			setsockopt(ep->sock, sp->ipproto_ip, IPV6_MULTICAST_IF, &ep->mreq.ipv6_mreq.ipv6mr_interface, sizeof(ep->mreq.ipv6_mreq.ipv6mr_interface))) {
 			ep->errstr = __FUNCTION__ ": IPV6_MULTICAST_IF";
 			ep->_errno = errno;
