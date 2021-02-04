@@ -446,6 +446,16 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 			return -1;
 		}
 #endif
+#ifdef IPV6_MULTICAST_IF
+		/* Set multicast sending interface for IPv6 */
+		if ((ep->family == AF_INET6) &&
+			setsockopt(ep->sock, sp->ipproto_ip, IPV6_MULTICAST_IF, &ep->mreq.ipv6_mreq.ipv6mr_interface, sizeof(ep->mreq.ipv6_mreq.ipv6mr_interface))) {
+			ep->errstr = __FUNCTION__ ": IPV6_MULTICAST_IF";
+			ep->_errno = errno;
+			close(ep->sock);
+			return -1;
+		}
+#endif
 		/* Disable loopback. */
 		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_multicast_loop, &disable, sizeof(disable))) {
 			ep->errstr = __FUNCTION__ ": IP_MULTICAST_LOOP";
