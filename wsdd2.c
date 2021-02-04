@@ -436,6 +436,15 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 			return -1;
 		}
 #endif
+#ifdef IPV6_RECVPKTINFO
+		if ((ep->family == AF_INET6) &&
+			setsockopt(ep->sock, sp->ipproto_ip, IPV6_RECVPKTINFO, &enable, sizeof(enable))) {
+			ep->errstr = __FUNCTION__ ": IPV6_RECVPKTINFO";
+			ep->_errno = errno;
+			close(ep->sock);
+			return -1;
+		}
+#endif
 #ifdef IP_MULTICAST_IF
 		/* Set multicast sending interface to avoid error: wsdd-mcast-v4: wsd_send_soap_msg: send: No route to host */
 		if ((ep->family == AF_INET) &&
