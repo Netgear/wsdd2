@@ -406,9 +406,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 #endif
 #ifdef SO_BINDTODEVICE
 	if (!sv->mcast_addr && (ep->family == AF_INET || ep->family == AF_INET6)) {
-		struct ifreq ifr;
-		strncpy(ifr.ifr_name, ep->ifname, IFNAMSIZ-1);
-		if (setsockopt(ep->sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr))) {
+		if (setsockopt(ep->sock, SOL_SOCKET, SO_BINDTODEVICE, ep->ifname, strlen(ep->ifname))) {
 			ep->errstr = __FUNCTION__ ": SO_BINDTODEVICE";
 			ep->_errno = errno;
 			close(ep->sock);
