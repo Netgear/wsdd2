@@ -73,6 +73,7 @@ extern bool is_daemon;
 #define _ADDRSTRLEN	max(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)
 
 typedef union {
+	struct sockaddr		sa;
 	struct sockaddr_in	in;
 	struct sockaddr_in6	in6;
 	struct sockaddr_nl	nl;
@@ -96,7 +97,7 @@ struct endpoint {
 	int sock;
 	char *errstr;
 	int _errno;
-	size_t mlen, llen;
+	size_t mlen, llen, mreqlen;
 	_saddr_t mcast, local;
 	union {
 #ifdef USE_ip_mreq
@@ -106,7 +107,6 @@ struct endpoint {
 #endif
 		struct ipv6_mreq ipv6_mreq;
 	} mreq;
-	size_t mreqlen;
 };
 
 struct service {

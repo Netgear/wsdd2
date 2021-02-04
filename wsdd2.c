@@ -30,7 +30,7 @@
 #include <setjmp.h> // jmp_buf, setjmp(), longjmp()
 #include <signal.h> // sig_atomic_t, SIGHUP, SIGINT, SIGTERM
 #include <string.h> // strncpy(), strchr(), strsignal()
-#include <unistd.h> // gethostname()
+#include <unistd.h> // gethostname(), getpid()
 #include <syslog.h> // openlog()
 #include <limits.h> // HOST_NAME_MAX
 #include <errno.h> // errno, ENOMEM
@@ -160,36 +160,27 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 {
 	int rv = -1;
 
-	if (ifaddrs_list == NULL) {
-		errno = EADDRNOTAVAIL;
-		return -1;
-	}
-
-	ci->ss.ss_family = sa->ss.ss_family;
-
 	for (struct ifaddrs *ifa = ifaddrs_list; ifa; ifa = ifa->ifa_next) {
 		const uint8_t *_if, *_nm, *_sa;
 		uint8_t *_ca;
 		size_t alen;
 
-		if (!ifa->ifa_addr || sa->ss.ss_family != ifa->ifa_addr->sa_family)
+		if (ifa->ifa_flags & IFF_SLAVE || !ifa->ifa_netmask ||
+			!ifa->ifa_addr || ifa->ifa_addr->sa_family != sa->sa.sa_family)
 			continue;
 
 		if (ifindex && if_nametoindex(ifa->ifa_name) != ifindex)
 			continue;
 
-		if (debug_W >= 5) {
-			char name[_ADDRSTRLEN];
-
-			if (inet_ntop(ifa->ifa_addr->sa_family,
-					_SIN_ADDR((_saddr_t *)ifa->ifa_addr), name, sizeof name))
-				DEBUG(4, W, "%s: %s: if=%s ", __func__, ifa->ifa_name,name);
-			if (inet_ntop(sa->ss.ss_family,
-					_SIN_ADDR(sa), name, sizeof name))
-				DEBUG(4, W, "sc=%s ", name);
-			if (inet_ntop(ifa->ifa_netmask->sa_family,
-					_SIN_ADDR((_saddr_t *)ifa->ifa_netmask), name, sizeof name))
-				DEBUG(4, W, "nm=%s\n", name);
+		if (debug_W >= 4) {
+			char ifa_addr[_ADDRSTRLEN], ifa_netmask[_ADDRSTRLEN], sa_addr[_ADDRSTRLEN];
+			if (!inet_ntop(ifa->ifa_addr->sa_family, _SIN_ADDR((_saddr_t *)ifa->ifa_addr), ifa_addr, sizeof(ifa_addr)))
+				ifa_addr[0] = '\0';
+			if (!inet_ntop(sa->sa.sa_family, _SIN_ADDR(sa), ifa_netmask, sizeof(ifa_netmask)))
+				ifa_netmask[0] = '\0';
+			if (!inet_ntop(ifa->ifa_netmask->sa_family, _SIN_ADDR((_saddr_t *)ifa->ifa_netmask), sa_addr, sizeof(sa_addr)))
+				sa_addr[0] = '\0';
+			DEBUG(4, W, "%s: %s: if=%s nm=%s sc=%s", __func__, ifa->ifa_name, ifa_addr, ifa_netmask, sa_addr);
 		}
 
 		switch (sa->ss.ss_family) {
@@ -198,14 +189,14 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 			_nm = (uint8_t *) &((_saddr_t *)ifa->ifa_netmask)->in.sin_addr;
 			_sa = (uint8_t *) &sa->in.sin_addr;
 			_ca = (uint8_t *) &ci->in.sin_addr;
-			alen = sizeof sa->in.sin_addr;
+			alen = sizeof(sa->in.sin_addr);
 			break;
 		case AF_INET6:
 			_if = (uint8_t *) &((_saddr_t *)ifa->ifa_addr)->in6.sin6_addr;
 			_nm = (uint8_t *) &((_saddr_t *)ifa->ifa_netmask)->in6.sin6_addr;
 			_sa = (uint8_t *) &sa->in6.sin6_addr;
 			_ca = (uint8_t *) &ci->in6.sin6_addr;
-			alen = sizeof sa->in6.sin6_addr;
+			alen = sizeof(sa->in6.sin6_addr);
 			break;
 		default:
 			continue;
@@ -219,6 +210,7 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 			}
 		}
 		if (!rv) {
+			ci->ss.ss_family = sa->ss.ss_family;
 			memcpy(_ca, _if, alen);
 			break;
 		}
@@ -226,11 +218,11 @@ int connected_if(const _saddr_t *sa, _saddr_t *ci)
 
 	if (debug_W >= 4) {
 		char name[_ADDRSTRLEN];
-		if (inet_ntop(ci->ss.ss_family, _SIN_ADDR(ci), name, sizeof name))
+		if (inet_ntop(ci->ss.ss_family, _SIN_ADDR(ci), name, sizeof(name)))
 			DEBUG(4, W, "%s: ci=%s rv=%d", __func__, name, rv);
 	}
 
-	if (rv) errno = EADDRNOTAVAIL;
+	if (rv) errno = ENONET;
 	return rv;
 }
 
@@ -245,8 +237,7 @@ char *ip2uri(const char *ip)
 	asprintf(&uri, "[%s]", ip);
 #else
 	char name[HOST_NAME_MAX + 1];
-
-	if (!gethostname(name, sizeof name - 1))
+	if (!gethostname(name, sizeof(name) - 1))
 		uri = strdup(name);
 #endif
 	return uri;
@@ -259,48 +250,50 @@ static const struct sock_params {
 	const char *name;
 	int ipproto_ip;
 	int ip_multicast_loop;
-	int ip_add_membership, ip_drop_membership;
+	int ip_add_membership;
+	int ip_drop_membership;
 	size_t llen, mlen, mreqlen;
 } sock_params[] = {
 	[AF_INET] = {
-		.family	= AF_INET,
-		.name	= "IPv4",
-		.ipproto_ip	= IPPROTO_IP,
+		.family			= AF_INET,
+		.name			= "IPv4",
+		.ipproto_ip		= IPPROTO_IP,
 		.ip_multicast_loop	= IP_MULTICAST_LOOP,
 		.ip_add_membership	= IP_ADD_MEMBERSHIP,
 		.ip_drop_membership	= IP_DROP_MEMBERSHIP,
-		.llen		= sizeof(struct sockaddr_in),
-		.mlen		= sizeof(struct sockaddr_in),
-		.mreqlen	= sizeof endpoints[0].mreq.ip_mreq,
+		.llen			= sizeof(struct sockaddr_in),
+		.mlen			= sizeof(struct sockaddr_in),
+		.mreqlen		= sizeof(endpoints[0].mreq.ip_mreq),
 	},
 	[AF_INET6] = {
-		.family	= AF_INET6,
-		.name	= "IPv6",
-		.ipproto_ip	= IPPROTO_IPV6,
+		.family			= AF_INET6,
+		.name			= "IPv6",
+		.ipproto_ip		= IPPROTO_IPV6,
 		.ip_multicast_loop	= IPV6_MULTICAST_LOOP,
 		.ip_add_membership	= IPV6_ADD_MEMBERSHIP,
 		.ip_drop_membership	= IPV6_DROP_MEMBERSHIP,
-		.llen		= sizeof(struct sockaddr_in6),
-		.mlen		= sizeof(struct sockaddr_in6),
-		.mreqlen	= sizeof endpoints[0].mreq.ipv6_mreq,
+		.llen			= sizeof(struct sockaddr_in6),
+		.mlen			= sizeof(struct sockaddr_in6),
+		.mreqlen		= sizeof(endpoints[0].mreq.ipv6_mreq),
 	},
 	[AF_NETLINK] = {
-		.family	= AF_NETLINK,
-		.name = "NETLINK",
-		.llen = sizeof(struct sockaddr_nl),
+		.family			= AF_NETLINK,
+		.name			= "NETLINK",
+		.llen			= sizeof(struct sockaddr_nl),
 	},
 };
 
-static const char *servicename[] = {
-        [SOCK_STREAM]	= "tcp",
-        [SOCK_DGRAM]	= "udp",
+static const char *socktype_str[] = {
+	[SOCK_STREAM]    = "tcp",
+	[SOCK_DGRAM]     = "udp",
+	[SOCK_SEQPACKET] = "seq",
 };
 
 static int open_ep(struct endpoint **epp, struct service *sv, const struct ifaddrs *ifa)
 {
 #define __FUNCTION__	"open_ep"
-	struct endpoint *ep = calloc(sizeof *ep, 1);
-	if (!(*epp = ep)) {
+	struct endpoint *ep = calloc(sizeof(*ep), 1);
+	if ((*epp = ep) == NULL) {
 		errno = ENOMEM;
 		err(EXIT_FAILURE, __FUNCTION__ ": calloc");
 	}
@@ -318,7 +311,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	}
 
 	if (sv->family == AF_INET || sv->family == AF_INET6) {
-		struct servent *se = getservbyname(sv->port_name, servicename[sv->type]);
+		struct servent *se = getservbyname(sv->port_name, socktype_str[sv->type]);
 		ep->port = se ? ntohs(se->s_port) : 0;
 		if (!ep->port)
 			ep->port = sv->port_num;
@@ -332,7 +325,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	const struct sock_params *sp = &sock_params[ep->family];
 
 	ep->mcast.ss.ss_family = ep->family;
-	ep->mlen = sp->llen;
+	ep->mlen = sp->mlen;
 
 	ep->local.ss.ss_family = ep->family;
 	ep->llen = sp->llen;
@@ -343,8 +336,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	case AF_INET:
 		if (sv->mcast_addr) {
 			ep->mcast.in.sin_port = htons(ep->port);
-			if (inet_pton(ep->family, sv->mcast_addr,
-				&ep->mcast.in.sin_addr.s_addr) != 1) {
+			if (inet_pton(ep->family, sv->mcast_addr, &ep->mcast.in.sin_addr.s_addr) != 1) {
 				ep->errstr = __FUNCTION__ ": Bad mcast IP addr";
 				ep->_errno = errno;
 				return -1;
@@ -357,7 +349,6 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 			ep->mreq.ip_mreq.imr_ifindex = if_nametoindex(ep->ifname);
 #endif
 		}
-
 		//ep->local.saddr_in = *(struct sockaddr_in *)ifa->ifa_addr;
 		ep->local.in.sin_addr.s_addr = htonl(INADDR_ANY);
 		ep->local.in.sin_port = htons(ep->port);
@@ -366,8 +357,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 	case AF_INET6:
 		if (sv->mcast_addr) {
 			ep->mcast.in6.sin6_port = htons(ep->port);
-			if (inet_pton(ep->family, sv->mcast_addr,
-				ep->mcast.in6.sin6_addr.s6_addr) != 1) {
+			if (inet_pton(ep->family, sv->mcast_addr, ep->mcast.in6.sin6_addr.s6_addr) != 1) {
 				ep->errstr = __FUNCTION__ ": Bad mcast IPv6 addr";
 				ep->_errno = errno;
 				return -1;
@@ -375,13 +365,13 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 			ep->mreq.ipv6_mreq.ipv6mr_multiaddr = ep->mcast.in6.sin6_addr;
 			ep->mreq.ipv6_mreq.ipv6mr_interface = if_nametoindex(ep->ifname);
 		}
-
 		//ep->local.in6 = *(struct sockaddr_in6 *)ifa->ifa_addr;
 		ep->local.in6.sin6_addr = in6addr_any;
 		ep->local.in6.sin6_port = htons(ep->port);
 		break;
 
 	case AF_NETLINK:
+		ep->local.nl.nl_pid = getpid();
 		ep->local.nl.nl_groups = ep->service->nl_groups;
 		break;
 	}
@@ -441,7 +431,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 
 #ifdef IP_PKTINFO
 		if ((ep->family == AF_INET) &&
-			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO, &enable, sizeof enable)) {
+			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO, &enable, sizeof(enable))) {
 			ep->errstr = __FUNCTION__ ": IP_PKTINFO";
 			ep->_errno = errno;
 			close(ep->sock);
@@ -459,7 +449,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		}
 #endif
 		/* Disable loopback. */
-		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_multicast_loop, &disable, sizeof disable)) {
+		if (setsockopt(ep->sock, sp->ipproto_ip, sp->ip_multicast_loop, &disable, sizeof(disable))) {
 			ep->errstr = __FUNCTION__ ": IP_MULTICAST_LOOP";
 			ep->_errno = errno;
 			close(ep->sock);
@@ -493,12 +483,9 @@ static void close_ep(struct endpoint *ep)
 {
 	if (ep->service->exit)
 		ep->service->exit(ep);
-	if (ep->service->mcast_addr) {
-		setsockopt(ep->sock,
-				sock_params[ep->family].ipproto_ip,
-				sock_params[ep->family].ip_drop_membership,
-				&ep->mreq, ep->mreqlen);
-	}
+	if (ep->service->mcast_addr)
+		setsockopt(ep->sock, sock_params[ep->family].ipproto_ip,
+			sock_params[ep->family].ip_drop_membership, &ep->mreq, ep->mreqlen);
 	close(ep->sock);
 }
 
@@ -514,7 +501,7 @@ void restart_service(void)
 
 static bool is_new_addr(struct nlmsghdr *nh)
 {
-	struct ifaddrmsg *ifam = (struct ifaddrmsg *)NLMSG_DATA(nh);
+	struct ifaddrmsg *ifam = (struct ifaddrmsg *) NLMSG_DATA(nh);
 	struct rtattr *rta = IFA_RTA(ifam);
 	size_t rtasize = IFA_PAYLOAD(nh);
 
@@ -529,9 +516,8 @@ static bool is_new_addr(struct nlmsghdr *nh)
 	}
 
 	while (RTA_OK(rta, rtasize)) {
-		struct ifa_cacheinfo *cache_info;
 		if (rta->rta_type == IFA_CACHEINFO) {
-			cache_info = (struct ifa_cacheinfo *)(RTA_DATA(rta));
+			struct ifa_cacheinfo *cache_info = (struct ifa_cacheinfo *) RTA_DATA(rta);
 			if (cache_info->cstamp != cache_info->tstamp)
 				return false;
 		}
@@ -638,8 +624,7 @@ int main(int argc, char **argv)
 		case 'b':
 			while (optarg)
 				if (set_getresp(optarg, (const char **)&optarg))
-					help(prog, EXIT_FAILURE,
-						"bad key:val '%s'\n", optarg);
+					help(prog, EXIT_FAILURE, "bad key:val '%s'\n", optarg);
 			break;
 		case 'd':
 			is_daemon = true;
@@ -755,40 +740,70 @@ again:
 
 		if (sv->family == AF_INET || sv->family == AF_INET6) {
 			for (struct ifaddrs *ifa = ifaddrs_list; ifa; ifa = ifa->ifa_next) {
-				if (!ifa->ifa_addr ||
-					(ifa->ifa_addr->sa_family != sv->family) ||
-					(ifa->ifa_flags & IFF_LOOPBACK) ||
-					(ifa->ifa_flags & IFF_SLAVE) ||
-					(ifname && strcmp(ifa->ifa_name, ifname) != 0) ||
-					(!strcmp(ifa->ifa_name, "LeafNets")) ||
-					(!strncmp(ifa->ifa_name, "docker", 6)) ||
-					(!strncmp(ifa->ifa_name, "veth", 4)) ||
-					(!strncmp(ifa->ifa_name, "tun", 3)) ||
-					(!strncmp(ifa->ifa_name, "ppp", 3)) ||
-					(!strncmp(ifa->ifa_name, "zt", 2)) ||
-					(sv->mcast_addr && !(ifa->ifa_flags & IFF_MULTICAST)))
+				if (ifa->ifa_flags & IFF_SLAVE || !ifa->ifa_netmask ||
+					!ifa->ifa_addr || ifa->ifa_addr->sa_family != sv->family)
 					continue;
 
-				// skip bridge ports unless it specified on command line
+				char ifaddr[_ADDRSTRLEN];
+				void *addr = _SIN_ADDR((_saddr_t *)ifa->ifa_addr);
+				inet_ntop(ifa->ifa_addr->sa_family, addr, ifaddr, sizeof(ifaddr));
+
+				if (ifname && strcmp(ifa->ifa_name, ifname) != 0) {
+					//DEBUG(2, W, "skipped %s: not selected", ifa->ifa_name);
+					ifa->ifa_flags |= IFF_SLAVE; // mark as not used
+					continue;
+				}
+
+				// skip if already bound to this interface
+				ep = NULL;
+				for (struct endpoint *e = endpoints; e; e = e->next)
+					if (e->service == sv && strcmp(e->ifname, ifa->ifa_name) == 0)
+						ep = e;
+
+				// show interface
+				DEBUG(1, W, "%s %s port %d %s %s @ %s%s", sv->name,
+					socktype_str[sv->type], sv->port_num,
+					sv->mcast_addr ? sv->mcast_addr : "-",
+					ifaddr, ifa->ifa_name, ep ? ": already bound" : "");
+				if (ep)
+					continue;
+
+				if (!ifname && sv->mcast_addr && !(ifa->ifa_flags & IFF_MULTICAST)) {
+					DEBUG(2, W, "skipped %s: not multicast", ifa->ifa_name);
+					ifa->ifa_flags |= IFF_SLAVE; // mark as not used
+					continue;
+				}
+				if (!ifname && (ifa->ifa_flags & IFF_LOOPBACK)) {
+					DEBUG(2, W, "skipped %s: loopback", ifa->ifa_name);
+					ifa->ifa_flags |= IFF_SLAVE; // mark as not used
+					continue;
+				}
+				if (!ifname && ((!strcmp(ifa->ifa_name, "LeafNets")) ||
+						(!strncmp(ifa->ifa_name, "docker", 6)) ||
+						(!strncmp(ifa->ifa_name, "veth", 4)) ||
+						(!strncmp(ifa->ifa_name, "tun", 3)) ||
+						(!strncmp(ifa->ifa_name, "ppp", 3)) ||
+						(!strncmp(ifa->ifa_name, "zt", 2)))) {
+					DEBUG(2, W, "skipped %s: excluded by name", ifa->ifa_name);
+					ifa->ifa_flags |= IFF_SLAVE; // mark as not used
+					continue;
+				}
+				// skip bridge ports unless it is specified on the command line
 				if (!ifname) {
 					struct stat st;
 					char path[sizeof("/sys/class/net//brport") + IFNAMSIZ];
 					snprintf(path, sizeof(path), "/sys/class/net/%s/brport", ifa->ifa_name);
-					if (stat(path, &st) == 0)
+					if (stat(path, &st) == 0) {
+						DEBUG(2, W, "skipped %s: bridge port", ifa->ifa_name);
+						ifa->ifa_flags |= IFF_SLAVE; // mark as not used
 						continue;
+					}
 				}
-
-				char ifaddr[_ADDRSTRLEN];
-				void *addr = _SIN_ADDR((_saddr_t *)ifa->ifa_addr);
-
-				inet_ntop(ifa->ifa_addr->sa_family, addr, ifaddr, sizeof(ifaddr));
-				DEBUG(2, W, "%s %s %s %s:%d @ %s", sv->name, servicename[sv->type],
-					sv->mcast_addr ? sv->mcast_addr : "-",
-					ifaddr, sv->port_num, ifa->ifa_name);
-
-				if (open_ep(&ep, sv, ifa)) {
-					LOG(LOG_ERR, "error: %s: %s: %s",
-						ep->service->name, ep->errstr, strerror(ep->_errno));
+				// open socket for this interface/family
+				if (open_ep(&ep, sv, ifa) != 0) {
+					LOG(LOG_ERR, "error: %s: %s: %s", ep->service->name,
+						ep->errstr, strerror(ep->_errno));
+					ifa->ifa_flags |= IFF_SLAVE; // mark as not used
 					free(ep);
 					continue;
 				} else if (ep->sock < 0) {
@@ -801,14 +816,12 @@ again:
 						nfds = ep->sock;
 				}
 			}
-			if (badep)
-				break;
 
 		} else if (sv->family == AF_NETLINK) {
 			const struct ifaddrs ifa = { .ifa_name = "netlink", };
 
 			DEBUG(2, W, "%s 0x%x @ %s", sv->name, sv->nl_groups, ifa.ifa_name);
-			if (open_ep(&ep, sv, &ifa)) {
+			if (open_ep(&ep, sv, &ifa) != 0) {
 				badep = ep;
 				break;
 			} else if (ep->sock < 0) {

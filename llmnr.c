@@ -64,7 +64,7 @@
 
 static void dumphex(const char *label, const void *p, size_t len)
 {
-	if (debug_L >= 3)
+	if (debug_L >= 5)
 		dump(p, len, 0, label);
 }
 

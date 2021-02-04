@@ -491,7 +491,7 @@ static int wsd_send_msg(int fd, struct endpoint *ep, const _saddr_t *sa,
 
 	char ip[_ADDRSTRLEN];
 	inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), ip, sizeof ip);
-	DEBUG(3, W, "WSD-TO %s:%u (fd=%d,len=%d,sent=%d) '%s'\n", ip, _SIN_PORT(sa), fd,
+	DEBUG(3, W, "WSD-TO %s port %u (fd=%d,len=%d,sent=%d) '%s'\n", ip, _SIN_PORT(sa), fd,
 		msglen, ret, msg);
 
 	return ret != (int) msglen;
@@ -1015,7 +1015,7 @@ int wsd_init(struct endpoint *ep)
 	if (!wsd_instance)
 		time(&wsd_instance);
 	if (!wsd_sequence[0])
-		uuid_random(wsd_sequence, sizeof wsd_sequence);
+		uuid_random(wsd_sequence, sizeof(wsd_sequence));
 	if (!wsd_endpoint[0]) {
 		uuid_endpoint(wsd_endpoint);
 		if (!wsd_endpoint[0]) {
@@ -1025,7 +1025,7 @@ int wsd_init(struct endpoint *ep)
 		}
 	}
 
-	if (!hostname[0] && gethostname(hostname, sizeof hostname - 1)) {
+	if (!hostname[0] && gethostname(hostname, sizeof(hostname) - 1)) {
 		ep->errstr = "wsd_init: gethostname";
 		ep->_errno = errno;
 		return -1;
@@ -1036,7 +1036,7 @@ int wsd_init(struct endpoint *ep)
 	if (!netbiosname && !(netbiosname = get_smbparm(ep, "netbios name", hostname)))
 		return -1;
 
-	DEBUG(3, W, "netbios name %s, workgroup %s", netbiosname, workgroup);
+	DEBUG(1, W, "netbios name %s, workgroup %s", netbiosname, workgroup);
 
 	if (!getresp_inited)
 		init_getresp();
@@ -1110,7 +1110,7 @@ int wsd_recv(struct endpoint *ep)
 	{
 		char ip[_ADDRSTRLEN];
 		inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
-		DEBUG(3, W, "WSD-FROM %s:%u (fd=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa), fd, len, buf);
+		DEBUG(3, W, "WSD-FROM %s port %u (fd=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa), fd, len, buf);
 	}
 
 	if (ep->type == SOCK_STREAM && strncmp(buf, "POST ", 5) == 0) {
@@ -1119,7 +1119,7 @@ int wsd_recv(struct endpoint *ep)
 		{
 			char ip[_ADDRSTRLEN];
 			inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
-			DEBUG(3, W, "WSD-BODY %s:%u (fd=%d,status=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa),
+			DEBUG(3, W, "WSD-BODY %s port %u (fd=%d,status=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa),
 				fd, status, strlen(buf), buf);
 		}
 
@@ -1142,7 +1142,7 @@ int wsd_recv(struct endpoint *ep)
 		const char *action = info && info->action ? strrchr(info->action, '/') : "NONE";
 		if (!action) action = info->action;
 		const char *address = info && info->address ? info->address : NULL;
-		DEBUG(2, W, "WSD_ACTION: %s %u %s %s %s", src, _SIN_PORT(&sa),
+		DEBUG(2, W, "WSD-ACTION %s port %u %s %s %s", src, _SIN_PORT(&sa),
 			ep->service->name, action, address);
 	}
 
