@@ -488,10 +488,6 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		return -1;
 	}
 
-	if (ep->service->init && ep->service->init(ep)) {
-		close(ep->sock);
-		return -1;
-	}
 	return 0;
 #undef __FUNCTION__
 }
@@ -849,6 +845,16 @@ again:
 				FD_SET(ep->sock, &fds);
 				if (nfds < ep->sock)
 					nfds = ep->sock;
+			}
+		}
+	}
+
+	if (!badep) {
+		for (struct endpoint *ep = endpoints; ep; ep = ep->next) {
+			if (ep->service->init && ep->service->init(ep)) {
+				DEBUG(1, W, "%s init failed: %s: %s", ep->service->name,
+						ep->errstr, strerror(ep->_errno));
+				//badep = ep;
 			}
 		}
 	}
