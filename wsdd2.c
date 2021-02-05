@@ -252,6 +252,7 @@ static const struct sock_params {
 	int ip_multicast_loop;
 	int ip_add_membership;
 	int ip_drop_membership;
+	int ip_pktinfo;
 	size_t llen, mlen, mreqlen;
 } sock_params[] = {
 	[AF_INET] = {
@@ -261,6 +262,7 @@ static const struct sock_params {
 		.ip_multicast_loop	= IP_MULTICAST_LOOP,
 		.ip_add_membership	= IP_ADD_MEMBERSHIP,
 		.ip_drop_membership	= IP_DROP_MEMBERSHIP,
+		.ip_pktinfo		= IP_PKTINFO,
 		.llen			= sizeof(struct sockaddr_in),
 		.mlen			= sizeof(struct sockaddr_in),
 		.mreqlen		= sizeof(endpoints[0].mreq.ip_mreq),
@@ -272,6 +274,7 @@ static const struct sock_params {
 		.ip_multicast_loop	= IPV6_MULTICAST_LOOP,
 		.ip_add_membership	= IPV6_ADD_MEMBERSHIP,
 		.ip_drop_membership	= IPV6_DROP_MEMBERSHIP,
+		.ip_pktinfo		= IPV6_RECVPKTINFO,
 		.llen			= sizeof(struct sockaddr_in6),
 		.mlen			= sizeof(struct sockaddr_in6),
 		.mreqlen		= sizeof(endpoints[0].mreq.ipv6_mreq),
@@ -292,6 +295,8 @@ static const char *socktype_str[] = {
 static int open_ep(struct endpoint **epp, struct service *sv, const struct ifaddrs *ifa)
 {
 #define __FUNCTION__	"open_ep"
+	const unsigned int disable = 0, enable = 1;
+
 	struct endpoint *ep = calloc(sizeof(*ep), 1);
 	if ((*epp = ep) == NULL) {
 		errno = ENOMEM;
@@ -383,7 +388,6 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		return -1;
 	}
 
-	const unsigned int enable = 1;
 	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof enable);
 #ifdef SO_REUSEPORT
 	setsockopt(ep->sock, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof enable);
@@ -424,27 +428,15 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 		return (ep->_errno == EADDRINUSE) ? 0 : -1;
 	}
 
-	if (sv->mcast_addr) {
-		const unsigned int disable = 0, enable = 1;
+	if (ep->type == SOCK_DGRAM &&
+		setsockopt(ep->sock, sp->ipproto_ip, sp->ip_pktinfo, &enable, sizeof(enable))) {
+		ep->errstr = __FUNCTION__ ": PKTINFO";
+		ep->_errno = errno;
+		close(ep->sock);
+		return -1;
+	}
 
-#ifdef IP_PKTINFO
-		if (ep->family == AF_INET && ep->type == SOCK_DGRAM &&
-			setsockopt(ep->sock, sp->ipproto_ip, IP_PKTINFO, &enable, sizeof(enable))) {
-			ep->errstr = __FUNCTION__ ": IP_PKTINFO";
-			ep->_errno = errno;
-			close(ep->sock);
-			return -1;
-		}
-#endif
-#ifdef IPV6_RECVPKTINFO
-		if (ep->family == AF_INET6 && ep->type == SOCK_DGRAM &&
-			setsockopt(ep->sock, sp->ipproto_ip, IPV6_RECVPKTINFO, &enable, sizeof(enable))) {
-			ep->errstr = __FUNCTION__ ": IPV6_RECVPKTINFO";
-			ep->_errno = errno;
-			close(ep->sock);
-			return -1;
-		}
-#endif
+	if (sv->mcast_addr) {
 #ifdef IP_MULTICAST_IF
 		/* Set multicast sending interface to avoid error: wsdd-mcast-v4: wsd_send_soap_msg: send: No route to host */
 		if (ep->family == AF_INET && ep->type == SOCK_DGRAM &&

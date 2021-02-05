@@ -26,7 +26,8 @@
 #include <syslog.h> // syslog()
 #include <net/if.h> // IFNAMSIZ
 #include <arpa/inet.h> // ntohs()
-#include <netinet/in.h> // struct sockaddr_in
+#include <netinet/in.h> // struct sockaddr_in, struct ip_mreq
+#include <linux/in.h> // struct ip_mreqn
 #include <linux/netlink.h> // struct sockaddr_nl
 
 /* wsd.c */
