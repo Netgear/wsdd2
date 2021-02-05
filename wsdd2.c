@@ -745,13 +745,16 @@ int main(int argc, char **argv)
 					help(prog, EXIT_FAILURE, "Bad key:val '%s'", optarg);
 			break;
 		case '?':
-			if (optopt == 'b' || optopt == 'i' || optopt == 'N' || optopt == 'G')
-				fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+			if (strchr("iHNGb", optopt))
+				printf("Option -%c requires an argument.\n", optopt);
 			/* ... fall through ... */
 		default:
 			help(prog, EXIT_FAILURE, "Bad option '%c'", opt);
 		}
 	}
+
+	if (argc > optind)
+		help(prog, EXIT_FAILURE, "Unknown argument '%s'", argv[optind]);
 
 	if (!ipv46)
 		ipv46 = _4 | _6;
