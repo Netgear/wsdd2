@@ -32,9 +32,10 @@
 #include <stdarg.h> // va_list, va_start()
 #include <setjmp.h> // jmp_buf, setjmp(), longjmp()
 #include <signal.h> // sig_atomic_t, SIGHUP, SIGINT, SIGTERM
-#include <unistd.h> // gethostname(), getpid()
+#include <unistd.h> // gethostname(), getpid(), setsid(), close(), dup2()
 #include <syslog.h> // openlog()
 #include <string.h> // strncpy(), strchr(), strsignal()
+#include <fcntl.h> // open()
 #include <ctype.h> // isdigit(), isspace()
 #include <errno.h> // errno, ENOMEM
 #include <err.h> // err()
@@ -570,7 +571,7 @@ static int netlink_recv(struct endpoint *ep)
 
 static void sighandler(int sig)
 {
-	DEBUG(0, W, "%s received.", strsignal(sig));
+	DEBUG(0, W, "'%s' signal received.", strsignal(sig));
 	switch (sig) {
 	case SIGHUP:
 		restart = 1;
@@ -770,6 +771,19 @@ int main(int argc, char **argv)
 			err(EXIT_FAILURE, "fork");
 		if (pid)
 			exit(EXIT_SUCCESS);
+
+                chdir("/");
+
+                int fd;
+                if ((fd = open("/dev/null", O_RDWR, 0)) != -1) {
+                        dup2(fd, STDIN_FILENO);
+                        dup2(fd, STDOUT_FILENO);
+                        dup2(fd, STDERR_FILENO);
+                        if (fd > STDERR_FILENO) close(fd);
+                }
+
+		if (setsid() < 0)
+			exit(EXIT_FAILURE);
 	}
 
 	openlog(prog, LOG_PID, LOG_USER);
