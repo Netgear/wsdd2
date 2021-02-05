@@ -30,10 +30,8 @@
 #include <linux/in.h> // struct ip_mreqn
 #include <linux/netlink.h> // struct sockaddr_nl
 
-/* wsd.c */
-extern char *netbiosname, *workgroup;
-
 /* wsdd2.c */
+extern char *hostname, *netbiosname, *workgroup;
 extern int debug_L, debug_W;
 extern bool is_daemon;
 
@@ -131,8 +129,10 @@ int wsd_init(struct endpoint *);
 int wsd_recv(struct endpoint *);
 void wsd_exit(struct endpoint *);
 
-int set_getresp(const char *, const char **);
-void printBootInfoKeys(FILE *, int);
+void init_getresp(void);
+const char *get_getresp(const char *key);
+int set_getresp(const char *key, const char **endp);
+void printBootInfoKeys(FILE *fp, int indent);
 
 // llmnr.c
 int llmnr_init(struct endpoint *);

@@ -20,19 +20,22 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _GNU_SOURCE // asprintf()
+
 #include "wsdd.h"
 
 #include <stddef.h> // NULL
+#include <limits.h> // HOST_NAME_MAX
 #include <stdbool.h> // bool
-#include <stdio.h> // snprintf()
+#include <stdio.h> // snprintf(), asprintf()
 #include <stdlib.h> // calloc(), free(), EXIT_FAILURE
 #include <stdarg.h> // va_list, va_start()
 #include <setjmp.h> // jmp_buf, setjmp(), longjmp()
 #include <signal.h> // sig_atomic_t, SIGHUP, SIGINT, SIGTERM
-#include <string.h> // strncpy(), strchr(), strsignal()
 #include <unistd.h> // gethostname(), getpid()
 #include <syslog.h> // openlog()
-#include <limits.h> // HOST_NAME_MAX
+#include <string.h> // strncpy(), strchr(), strsignal()
+#include <ctype.h> // isdigit(), isspace()
 #include <errno.h> // errno, ENOMEM
 #include <err.h> // err()
 #include <libgen.h> // basename()
@@ -51,8 +54,9 @@
 #define PAGE_SIZE 4096 // PAGE_SIZE
 #endif
 
-int debug_L, debug_W, debug_N;
 bool is_daemon = false;
+int debug_L, debug_W, debug_N;
+char *hostname = NULL, *netbiosname = NULL, *workgroup = NULL;
 
 static char *ifname = NULL;
 static unsigned ifindex = 0;
@@ -576,6 +580,42 @@ static void sighandler(int sig)
 	}
 }
 
+static char *get_smbparm(const char *name, const char *_default)
+{
+#define __FUNCTION__	"get_smbparm"
+	char *cmd = NULL, *result = NULL;
+
+	if (asprintf(&cmd, "testparm -s --parameter-name=\"%s\" 2>/dev/null", name) <= 0) {
+		DEBUG(0, W, __FUNCTION__ ": can't allocate cmd string");
+		return NULL;
+	}
+
+	FILE *pp = popen(cmd, "r");
+	free(cmd);
+
+	if (!pp) {
+		DEBUG(0, W, __FUNCTION__ ": can't run testparam");
+		return strdup(_default);
+	}
+
+	char buf[PAGE_SIZE];
+	if (!fgets(buf, sizeof(buf), pp) || !buf[0]  || buf[0] == '\n') {
+		DEBUG(0, W, "cannot read %s from testparm", name);
+		result = strdup(_default);
+	} else { // trim whitespace
+		char *p;
+		for (p = buf + strlen(buf) - 1; buf < p && isspace(*p); p--)
+			*p = '\0';
+		for (p = buf; *p && isspace(*p); p++)
+			;
+		result = strdup(p);
+	}
+
+	pclose(pp);
+	return result;
+#undef __FUNCTION__
+}
+
 static void help(const char *prog, int ec, const char *fmt, ...)
 {
 	if (fmt) {
@@ -583,26 +623,50 @@ static void help(const char *prog, int ec, const char *fmt, ...)
 		va_start(ap, fmt);
 		vprintf(fmt, ap);
 		va_end(ap);
+		puts("\n");
 	}
 	printf( "WSDD and LLMNR daemon\n"
-		"Usage: %s [opts]\n"
-		"       -4  IPv4 only\n"
-		"       -6  IPv6 only\n"
-		"       -L  LLMNR debug mode (incremental level)\n"
-		"       -W  WSDD debug mode (incremental level)\n"
-		"       -d  go daemon\n"
-		"       -h  This message\n"
-		"       -l  LLMNR only\n"
-		"       -t  TCP only\n"
-		"       -u  UDP only\n"
-		"       -w  WSDD only\n"
-		"       -i \"interface\"  Listening interface (optional)\n"
-		"       -N  set NetbiosName manually\n"
-		"       -G  set Workgroup manually\n"
-		"       -b \"key1:val1,key2:val2,...\"  Boot parameters\n",
-			prog);
+		"Usage: %s [options]\n"
+		"       -h this message\n"
+		"       -d become daemon\n"
+		"       -4 IPv4 only\n"
+		"       -6 IPv6 only\n"
+		"       -u UDP only\n"
+		"       -t TCP only\n"
+		"       -l LLMNR only\n"
+		"       -w WSDD only\n"
+		"       -L increment LLMNR debug level (%d)\n"
+		"       -W increment WSDD debug level (%d)\n"
+		"       -i <interface> reply only on this interface (%s)\n"
+		"       -H <name> set host name (%s)\n"
+		"       -N <name> set netbios name (%s)\n"
+		"       -G <name> set workgroup (%s)\n"
+		"       -b \"key1:val1,key2:val2,...\"  boot parameters:\n",
+		prog, debug_L, debug_W, ifname ? ifname : "any",
+		hostname, netbiosname, workgroup
+	);
 	printBootInfoKeys(stdout, 11);
 	exit(ec);
+}
+
+static void init_sysinfo()
+{
+	char hostn[HOST_NAME_MAX + 1];
+
+	if (!hostname && gethostname(hostn, sizeof(hostn) - 1) != 0)
+		err(EXIT_FAILURE, "gethostname");
+
+	char *p = strchr(hostn, '.');
+	if (p) *p = '\0';
+	hostname = strdup(hostn);
+
+	if (!netbiosname && !(netbiosname = get_smbparm("netbios name", hostname)))
+		err(EXIT_FAILURE, "get_smbparm");
+
+	if (!workgroup && !(workgroup = get_smbparm("workgroup", "WORKGROUP")))
+		err(EXIT_FAILURE, "get_smbparm");
+
+	init_getresp();
 }
 
 #define	_4	1
@@ -618,30 +682,27 @@ int main(int argc, char **argv)
 	const char *prog = basename(argv[0]);
 	unsigned int ipv46 = 0, tcpudp = 0, llmnrwsdd = 0;
 
-	while ((opt = getopt(argc, argv, "?46LWb:dhltuwi:N:G:")) != -1) {
+	init_sysinfo();
+
+	while ((opt = getopt(argc, argv, "hd46utlwLWi:H:N:G:b:")) != -1) {
 		switch (opt) {
-		case 'L':
-			debug_L++;
-			break;
-		case 'W':
-			debug_W++;
-			break;
-		case 'b':
-			while (optarg)
-				if (set_getresp(optarg, (const char **)&optarg))
-					help(prog, EXIT_FAILURE, "bad key:val '%s'\n", optarg);
+		case 'h':
+			help(prog, EXIT_SUCCESS, NULL);
 			break;
 		case 'd':
 			is_daemon = true;
 			break;
-		case 'h':
-			help(prog, EXIT_SUCCESS, NULL);
-			break;
 		case '4':
-			ipv46	|= _4;
+			ipv46 |= _4;
 			break;
 		case '6':
-			ipv46	|= _6;
+			ipv46 |= _6;
+			break;
+		case 'u':
+			tcpudp |= _UDP;
+			break;
+		case 't':
+			tcpudp |= _TCP;
 			break;
 		case 'l':
 			llmnrwsdd |= _LLMNR;
@@ -649,45 +710,55 @@ int main(int argc, char **argv)
 		case 'w':
 			llmnrwsdd |= _WSDD;
 			break;
-		case 't':
-			tcpudp	|= _TCP;
+		case 'L':
+			debug_L++;
 			break;
-		case 'u':
-			tcpudp	|= _UDP;
+		case 'W':
+			debug_W++;
 			break;
 		case 'i':
-			if (optarg != NULL && strlen(optarg) > 1) {
-				ifindex = if_nametoindex(optarg);
-				if (ifindex == 0)
-					help(prog, EXIT_FAILURE, "bad interface '%s'\n", optarg);
+			if (optarg && strlen(optarg) && strcmp(optarg, "any") != 0) {
 				ifname = strdup(optarg);
+				ifindex = ifname ? if_nametoindex(ifname) : 0;
+				if (!ifindex) help(prog, EXIT_FAILURE, "Bad interface '%s'", ifname);
+			} else {
+				free(ifname);
+				ifname = NULL;
+				ifindex = 0;
 			}
+			break;
+		case 'H':
+			if (optarg != NULL && strlen(optarg) > 0)
+				hostname = strdup(optarg);
 			break;
 		case 'N':
-			if (optarg != NULL && strlen(optarg) > 1) {
+			if (optarg != NULL && strlen(optarg) > 0)
 				netbiosname = strdup(optarg);
-			}
 			break;
 		case 'G':
-			if (optarg != NULL && strlen(optarg) > 1) {
+			if (optarg != NULL && strlen(optarg) > 0)
 				workgroup = strdup(optarg);
-			}
+			break;
+		case 'b':
+			while (optarg)
+				if (set_getresp(optarg, (const char **)&optarg) != 0)
+					help(prog, EXIT_FAILURE, "Bad key:val '%s'", optarg);
 			break;
 		case '?':
 			if (optopt == 'b' || optopt == 'i' || optopt == 'N' || optopt == 'G')
 				fprintf(stderr, "Option -%c requires an argument.\n", optopt);
 			/* ... fall through ... */
 		default:
-			help(prog, EXIT_FAILURE, "bad option '%c'\n", opt);
+			help(prog, EXIT_FAILURE, "Bad option '%c'", opt);
 		}
 	}
 
 	if (!ipv46)
-		ipv46	= _4 | _6;
+		ipv46 = _4 | _6;
 	if (!llmnrwsdd)
 		llmnrwsdd = _LLMNR | _WSDD;
 	if (!tcpudp)
-		tcpudp	= _TCP | _UDP;
+		tcpudp = _TCP | _UDP;
 
 	if (is_daemon) {
 		pid_t pid = fork();
@@ -702,8 +773,10 @@ int main(int argc, char **argv)
 	LOG(LOG_INFO, "starting.");
 
 again:
-	{}	/* Necessary to satisfy C syntax for statement labeling. */
+	{} /* Necessary to satisfy C syntax for statement labeling. */
 	struct sigaction sigact, oldact;
+	DEBUG(1, W, "ifname %s, ifindex %d", ifname, ifindex);
+	DEBUG(1, W, "hostname %s, netbios name %s, workgroup %s", hostname, netbiosname, workgroup);
 
 	sigemptyset(&sigact.sa_mask);
 	sigact.sa_flags = 0;
@@ -882,8 +955,9 @@ again:
 			rv = EXIT_FAILURE;
 		}
 	}
+
 end:
-	{}
+	{} /* Necessary to satisfy C syntax for statement labeling. */
 	const char *badservice = NULL, *badbad = NULL;
 	int baderrno = 0;
 

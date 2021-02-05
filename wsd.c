@@ -60,7 +60,7 @@
 #include <stdlib.h> // srand48()
 #include <unistd.h> // usleep()
 #include <string.h> // strcmp(), strdup()
-#include <ctype.h> // isdigit()
+#include <ctype.h> // isdigit(), isspace()
 #include <time.h> // time_t, time()
 #include <errno.h> // errno
 #include <sys/socket.h> // sendto()
@@ -136,50 +136,6 @@ static void uuid_endpoint(char uuid[UUIDLEN])
 	}
 }
 
-static char *get_smbparm(struct endpoint *ep,
-			const char *name, const char *_default)
-{
-#define __FUNCTION__	"get_smbparm"
-	char *cmd = NULL, *result = NULL;
-
-	if (asprintf(&cmd, "testparm -s --parameter-name=\"%s\" 2>/dev/null",
-			name) <= 0) {
-		ep->_errno = errno;
-		ep->errstr = __FUNCTION__ ": Can't allocate cmd string";
-		return NULL;
-	}
-
-	FILE *pp = popen(cmd, "r");
-
-	if (!pp) {
-		ep->_errno = errno;
-		ep->errstr = __FUNCTION__ ": Can't run testparam";
-		free(cmd);
-		return strdup(_default);
-	} else {
-		char buf[80];
-
-		if (!fgets(buf, sizeof buf, pp) || !buf[0]  || buf[0] == '\n') {
-			DEBUG(0, W, "cannot read %s from testparm", name);
-			result = strdup(_default);
-		} else {/* Trim sapces. */
-			char *p;
-
-			for (p = buf + strlen(buf) - 1;
-				buf < p && isspace(*p); p--)
-				*p = '\0';
-			for (p = buf; *p && isspace(*p); p++)
-				;
-			result = strdup(p);
-		}
-		pclose(pp);
-		free(cmd);
-	}
-
-	return result;
-#undef __FUNCTION__
-}
-
 static struct {
 	const char *key, *_default;
 	char *value;
@@ -194,14 +150,6 @@ static struct {
 	{}
 };
 
-void printBootInfoKeys(FILE *fp, int sp)
-{
-	int i = 0;
-
-	while (bootinfo[i].key)
-		fprintf(fp, "%*s%s\n", sp, "", bootinfo[i++].key);
-}
-
 int set_getresp(const char *str, const char **next)
 {
 	int i;
@@ -209,11 +157,11 @@ int set_getresp(const char *str, const char **next)
 	size_t keylen, vallen;
 
 	if (str == NULL) {
-	    return -1;
+		return -1;
 	}
 
 	if (*str == '\0') {
-	    return -1;
+		return -1;
 	}
 
 	/* Trim leading space. */
@@ -253,11 +201,13 @@ int set_getresp(const char *str, const char **next)
 	for (i = 0; bootinfo[i].key; i++)
 		if (!strncasecmp(bootinfo[i].key, str, keylen))
 			break;
+
 	if (!bootinfo[i].key)
 		return -1;
 
 	if (!bootinfo[i].value)
 		bootinfo[i].value = strndup(val, vallen + 1);
+
 	return 0;
 
 exit:
@@ -266,31 +216,36 @@ exit:
 	return -1;
 }
 
-static const char *get_getresp(const char *key)
+const char *get_getresp(const char *key)
 {
-	int i;
-
-	for (i = 0; bootinfo[i].key; i++)
+	for (int i = 0; bootinfo[i].key; i++)
 		if (!strcmp(bootinfo[i].key, key))
-			return bootinfo[i].value
-					? bootinfo[i].value
-					: bootinfo[i]._default;
+			return bootinfo[i].value ? bootinfo[i].value : bootinfo[i]._default;
 	return "UNKNOWN";
 }
 
-static bool getresp_inited;
-static void init_getresp(void)
+void printBootInfoKeys(FILE *fp, int indent)
 {
-	FILE *fp = fopen("/proc/sys/dev/boot/info", "r");
-
-	if (fp) {
-		char buf[80];
-
-		while (fgets(buf, sizeof buf, fp))
-			set_getresp(buf, NULL);
-		fclose(fp);
+	for (int i = 0; bootinfo[i].key; i++) {
+		fprintf(fp, "%*s%s %s\n", indent, "",
+			bootinfo[i].key, get_getresp(bootinfo[i].key));
 	}
-	getresp_inited = true;
+}
+
+void init_getresp(void)
+{
+	static bool getresp_inited = false;
+
+	if (!getresp_inited) {
+		FILE *fp = fopen("/proc/sys/dev/boot/info", "r");
+		if (fp) {
+			char buf[80];
+			while (fgets(buf, sizeof(buf), fp))
+				set_getresp(buf, NULL);
+			fclose(fp);
+		}
+		getresp_inited = true;
+	}
 }
 
 #define SOAP11_NS \
@@ -826,8 +781,6 @@ static int send_http_resp_header(int fd, struct endpoint *ep,
 	return rv;
 }
 
-char *netbiosname = NULL, *workgroup = NULL;
-
 static int wsd_send_get_response(int fd,
 				struct endpoint *ep,
 				const _saddr_t *sa,
@@ -947,14 +900,14 @@ again:
 		*eol = '\0';
 
 		if ((val = HEADER_IS(p, "Content-Type:"))) {
-		        while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
+			while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
 				val++; // skip LWS
 			if (strcmp(val, "application/soap+xml")) {
 				ep->errstr = __FUNCTION__ ": Unsupported Content-Type";
 				return 400;
 			}
 		} else if ((val = HEADER_IS(p, "Content-Length:"))) {
-		        while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
+			while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
 				val++; // skip LWS
 			if ((contentlength = atoi(val)) <= 0) {
 				ep->errstr = __FUNCTION__ ": Invalid Content-Length";
@@ -1008,8 +961,6 @@ again:
 #undef	__FUNCTION__
 }
 
-static char hostname[HOST_NAME_MAX + 1];
-
 int wsd_init(struct endpoint *ep)
 {
 	if (!wsd_instance)
@@ -1024,22 +975,6 @@ int wsd_init(struct endpoint *ep)
 			return -1;
 		}
 	}
-
-	if (!hostname[0] && gethostname(hostname, sizeof(hostname) - 1)) {
-		ep->errstr = "wsd_init: gethostname";
-		ep->_errno = errno;
-		return -1;
-	}
-
-	if (!workgroup && !(workgroup = get_smbparm(ep, "workgroup", "WORKGROUP")))
-		return -1;
-	if (!netbiosname && !(netbiosname = get_smbparm(ep, "netbios name", hostname)))
-		return -1;
-
-	DEBUG(1, W, "netbios name %s, workgroup %s", netbiosname, workgroup);
-
-	if (!getresp_inited)
-		init_getresp();
 
 	return wsd_send_hello(ep);
 }
