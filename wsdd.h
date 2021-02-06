@@ -31,7 +31,7 @@
 #include <linux/netlink.h> // struct sockaddr_nl
 
 /* wsdd2.c */
-extern char *hostname, *netbiosname, *workgroup;
+extern char *hostname, *hostaliases, *netbiosname, *netbiosaliases, *workgroup;
 extern int debug_L, debug_W;
 extern bool is_daemon;
 

@@ -230,33 +230,35 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	/* check whether we are authorized to resolve this query */
 
 	int found = 0;
-	if (strlen(netbiosname) == in_name_len &&
-            strncasecmp(netbiosname, in_name, in_name_len) == 0)
-                found = 1;
+	if (!found && strlen(netbiosname) == in_name_len &&
+	    strncasecmp(netbiosname, in_name, in_name_len) == 0)
+		found = 1;
 
-	char name[HOST_NAME_MAX + 1];
-	if (gethostname(name, sizeof(name)-1) == 0 &&
-            strlen(name) == in_name_len && strncasecmp(name, in_name, in_name_len) == 0)
-                found = 1;
+	if (!found && hostname && strlen(hostname) == in_name_len &&
+	    strncasecmp(hostname, in_name, in_name_len) == 0)
+		found = 1;
 
-        /*
-	while (pmyname && *pmyname) {
-            if (strlen(*pmyname) == in_name_len &&
-                strncasecmp(*pmyname, in_name, in_name_len) == 0) {
-                found = 1;
-                break;
-            }
-            pmyname++;
-        }
-        */
+	for (char **pp = &hostaliases; !found && pp != &netbiosaliases; pp = &netbiosaliases) {
+	        for (const char *pname = *pp; pname && *pname;) {
+			const char *pend = strchr(pname, ' ');
+			size_t plen = pend ? (size_t) (pend - pname) : strlen(pname);
+			if (plen == in_name_len &&
+                            strncasecmp(pname, in_name, in_name_len) == 0) {
+				found = 1;
+				break;
+			}
+			pname += plen;
+			while (*pname == ' ') pname++;
+		}
+	}
 
-        if (!found) {
-            DEBUG(2, L, "llmnr: not authoritative for name %s", in_name);
-            free(in_name);
-            return -1;
-        }
+	if (!found) {
+	    DEBUG(2, L, "llmnr: not authoritative for name %s", in_name);
+	    free(in_name);
+	    return -1;
+	}
 
-        free(in_name);
+	free(in_name);
 
 	/*
 	 * start building up the LLMNR response

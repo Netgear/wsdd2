@@ -57,7 +57,7 @@
 
 bool is_daemon = false;
 int debug_L, debug_W, debug_N;
-char *hostname = NULL, *netbiosname = NULL, *workgroup = NULL;
+char *hostname = NULL, *hostaliases = NULL, *netbiosname = NULL, *netbiosaliases = NULL, *workgroup = NULL;
 
 static char *ifname = NULL;
 static unsigned ifindex = 0;
@@ -640,11 +640,13 @@ static void help(const char *prog, int ec, const char *fmt, ...)
 		"       -W increment WSDD debug level (%d)\n"
 		"       -i <interface> reply only on this interface (%s)\n"
 		"       -H <name> set host name (%s)\n"
+		"       -A \"name list\" set host aliases (%s)\n"
 		"       -N <name> set netbios name (%s)\n"
+		"       -B \"name list\" set netbios aliases (%s)\n"
 		"       -G <name> set workgroup (%s)\n"
-		"       -b \"key1:val1,key2:val2,...\"  boot parameters:\n",
+		"       -b \"key1:val1,key2:val2,...\" boot parameters:\n",
 		prog, debug_L, debug_W, ifname ? ifname : "any",
-		hostname, netbiosname, workgroup
+		hostname, hostaliases, netbiosname, netbiosaliases, workgroup
 	);
 	printBootInfoKeys(stdout, 11);
 	exit(ec);
@@ -661,7 +663,13 @@ static void init_sysinfo()
 	if (p) *p = '\0';
 	hostname = strdup(hostn);
 
+	if (!hostaliases && !(hostaliases = get_smbparm("additional dns hostnames", "")))
+		err(EXIT_FAILURE, "get_smbparm");
+
 	if (!netbiosname && !(netbiosname = get_smbparm("netbios name", hostname)))
+		err(EXIT_FAILURE, "get_smbparm");
+
+	if (!netbiosaliases && !(netbiosaliases = get_smbparm("netbios aliases", "")))
 		err(EXIT_FAILURE, "get_smbparm");
 
 	if (!workgroup && !(workgroup = get_smbparm("workgroup", "WORKGROUP")))
