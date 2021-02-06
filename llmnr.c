@@ -73,10 +73,9 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 {
 	uint16_t qdcount, ancount, nscount;
 	uint16_t qtype, qclass;
-	char *in_name = NULL, in_label[64];
+	char *in_name, *out = NULL;
 	const uint8_t *in_name_p = NULL;
-	size_t in_name_len = 0, out_name_len = 0;
-	char *out = NULL;
+	size_t in_name_len, out_name_len = 0;
 	size_t answer_len = 0;
 	int ret;
 	_saddr_t ci;
@@ -149,7 +148,7 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	 * check number of entries in question section (QDCOUNT)
 	 * it must be just one
 	 */
-	qdcount = (in[4]*256) + in[5];
+	qdcount = in[4] * 256 + in[5];
 	if (qdcount != 1) {
 		DEBUG(1, L, "llmnr: only one question entry allowed, found %u", qdcount);
 		return -1;
@@ -159,8 +158,8 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	 * check number of entries in answer and nameserver sections
 	 * must be zero in the request
 	 */
-	ancount = (in[6]*256) + in[7];
-	nscount = (in[8]*256) + in[9];
+	ancount = in[6] * 256 + in[7];
+	nscount = in[8] * 256 + in[9];
 	if (ancount > 0 || nscount > 0) {
 		DEBUG(1, L, "llmnr: number of answer and/or nameserver entries "
 			  "in query is invalid (ancount: %u, nscount: %u)",
@@ -169,6 +168,8 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	}
 
 	/* process all labels in question section */
+	in_name = strdup("");
+	in_name_len = 0;
 	in_name_p = &in[12];
 	while (*in_name_p > 0) {
 		/*
@@ -181,63 +182,52 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 			return -1;
 		}
 
-		/* process current label in question section */
-		memcpy(in_label, in_name_p+1, *in_name_p);
-		in_label[*in_name_p] = '\0';
-
 		/* append to the whole name */
-		in_name_len += *in_name_p + 1;
-		if (in_name) {
-			in_name = realloc(in_name, strlen(in_name) + strlen(in_label) + 2);
-			if (in_name == NULL) {
-                                DEBUG(1, L, "llmnr: realloc() failed");
-				return -1;
-			}
-			strcat(in_name, ".");
-			strcat(in_name, in_label);
-		} else {
-			in_name = strdup(in_label);
-			if (in_name == NULL) {
-                                DEBUG(1, L, "llmnr: strdup() failed");
-				return -1;
-			}
+		in_name_len += *in_name_p + (*in_name ? 1 : 0); // '.' if not first
+
+		in_name = realloc(in_name, in_name_len + 1);
+		if (in_name == NULL) {
+			DEBUG(1, L, "llmnr: realloc() failed");
+			return -1;
 		}
+		if (*in_name) strcat(in_name, ".");
+		strncat(in_name, (const char *) in_name_p + 1, *in_name_p);
 
 		/* next label */
-		in_name_p += (*in_name_p + 1);
-		//memset(in_label, 0, sizeof(in_label));
+		in_name_p += *in_name_p + 1;
+	}
+
+	/* verify in_name_len */
+	if (in_name_len != strlen(in_name)) {
+		DEBUG(1, L, "llmnr: bad name length %d != %d", in_name_len, strlen(in_name));
+		free(in_name);
+		return -1;
 	}
 
 	char abuf[_ADDRSTRLEN];
-	DEBUG(2, L, "llmnr: name in query %s (length: %zu) from %s", in_name,
-		   in_name_len, inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), abuf, sizeof abuf));
+	DEBUG(2, L, "llmnr: name in query %s (length: %zu) from %s", in_name, in_name_len,
+		inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), abuf, sizeof(abuf)));
 
 	/*
 	 * this implementation only supports questions of type A
 	 * or AAAA
 	 */
-	qtype = in_name_p[1]*256 + in_name_p[2];
+	qtype = in_name_p[1] * 256 + in_name_p[2];
 	if (qtype != DNS_TYPE_ANY && qtype != DNS_TYPE_A && qtype != DNS_TYPE_AAAA) {
-		DEBUG(1, L, "llmnr: record in question not of type ANY or A or AAAA");
+		DEBUG(1, L, "llmnr: record in question not of type ANY or A or AAAA: %#x", qtype);
 		free(in_name);
 		return -1;
 	}
 
 	/* this implementation only supports questions of class IN */
-	qclass = in_name_p[3]*256 + in_name_p[4];
+	qclass = in_name_p[3] * 256 + in_name_p[4];
 	if (qclass != DNS_CLASS_IN) {
 		DEBUG(1, L, "llmnr: record is not of class IN");
 		free(in_name);
 		return -1;
 	}
 
-	if (!in_name) {
-		DEBUG(1, L, "llmnr: could not get name");
-		return -1;
-	}
-
-	/* check whether we are authorize for resolving this query */
-	in_name_len = strlen(in_name);
+	/* check whether we are authorized to resolve this query */
 
 	int found = 0;
 	if (strlen(netbiosname) == in_name_len &&
