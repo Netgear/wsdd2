@@ -361,11 +361,11 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	out[out_name_len++] = 0x00;
 	out[out_name_len++] = 0x01;
 
-	/* TTL */
-	out[out_name_len++] = 0x00;
-	out[out_name_len++] = 0x00;
-	out[out_name_len++] = 0x00;
-	out[out_name_len++] = 0x00;
+	/* default TTL = 30: RFC 4795 2.8. RR TTL */
+	out[out_name_len++] = 0;
+	out[out_name_len++] = 0;
+	out[out_name_len++] = 0;
+	out[out_name_len++] = 30;
 
 	/* RDLENGTH and RDATA in answer section */
 	out[out_name_len++] = 0x00;
