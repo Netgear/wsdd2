@@ -1,8 +1,5 @@
-# wsdd2 (1.8)
+# wsdd2 (1.8.x)
 WSD/LLMNR Discovery/Name Service Daemon
-
-Source https://github.com/vovcat/wsdd2
-Report bugs using https://github.com/vovcat/wsdd2/issues
 
 With Microsoft turning off SMB1 feature completely on Windwos 10, any Samba shares on the
 local network become invisible to Windwos 10 computers. That's due to the fact that SMB1 is
@@ -28,4 +25,3 @@ https://www.downloads.netgear.com/files/GPL/ReadyNASOS_V6.9.3_WW_src.zip
 
 Consumed by this openwrt package:
 https://github.com/openwrt/packages/tree/master/net/wsdd2
-https://github.com/Andy2244/openwrt-extra/tree/master/wsdd2
