@@ -62,11 +62,13 @@
 #define DNS_TYPE_AAAA	0x001C	/* rfc 3596 */
 #define DNS_CLASS_IN	0x0001	/* rfc 1035 */
 
+#ifdef NL_DEBUG
 static void dumphex(const char *label, const void *p, size_t len)
 {
 	if (debug_L >= 5)
 		dump(p, len, 0, label);
 }
+#endif
 
 static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 				const uint8_t *in, size_t inlen)
@@ -80,9 +82,9 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	int ret;
 	_saddr_t ci;
 	socklen_t slen = (sa->ss.ss_family == AF_INET) ? sizeof sa->in : sizeof sa->in6;
-
+#ifdef NL_DEBUG
 	dumphex("LLMNR INPUT: ", in, inlen);
-
+#endif
 	if (connected_if(sa, &ci)) {
 		char buf[_ADDRSTRLEN];
 		DEBUG(1, L, "llmnr: connected_if: %s: %s",
@@ -370,7 +372,9 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 		memcpy(out + out_name_len, &ci.in6.sin6_addr, len);
 	}
 send:
+#ifdef NL_DEBUG
 	dumphex("LLMNR OUTPUT: ", out, inlen + answer_len);
+#endif
 	ret = sendto(ep->sock, out, inlen + answer_len, 0, (struct sockaddr *)sa, slen);
 
 	free(out);

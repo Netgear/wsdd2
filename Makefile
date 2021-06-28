@@ -7,7 +7,7 @@
 
 CFLAGS        = -Wall -Wextra -g -O0
 LDFLAGS       = -g
-OBJFILES      = wsdd2.o wsd.o llmnr.o nl_debug.o
+OBJFILES      = wsdd2.o wsd.o llmnr.o
 HEADERS       = wsdd.h wsd.h
 
 INSTALLPREFIX ?= $(PREFIX)/usr
@@ -19,7 +19,7 @@ SBININSTALLDIR = $(INSTALLPREFIX)/$(SBINDIR)
 MANINSTALLDIR = $(INSTALLPREFIX)/$(MANDIR)
 LIBINSTALLDIR = $(LIBDIR)
 
-all: wsdd2 nl_debug
+all: wsdd2
 
 nl_debug: CPPFLAGS+=-DMAIN
 nl_debug: nl_debug.c; $(LINK.c) $^ $(LOADLIBES) $(LDLIBS) -o $@

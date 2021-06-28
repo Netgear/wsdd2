@@ -552,9 +552,9 @@ static int netlink_recv(struct endpoint *ep)
 		ep->errstr = __FUNCTION__ ": netlink_recv: recv";
 		return -1;
 	}
-
+#ifdef NL_DEBUG
 	nl_debug(buf, msglen);
-
+#endif
 	for (struct nlmsghdr *nh = (struct nlmsghdr *) buf;
 			NLMSG_OK(nh, msglen) && nh->nlmsg_type != NLMSG_DONE;
 			nh = NLMSG_NEXT(nh, msglen)) {

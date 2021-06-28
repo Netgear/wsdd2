@@ -29,6 +29,7 @@
 #include <netinet/in.h> // struct sockaddr_in, struct ip_mreq
 #include <linux/in.h> // struct ip_mreqn
 #include <linux/netlink.h> // struct sockaddr_nl
+#include <time.h> // time_t, time()
 
 /* wsdd2.c */
 extern char *hostname, *hostaliases, *netbiosname, *netbiosaliases, *workgroup;
