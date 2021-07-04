@@ -25,3 +25,6 @@ https://www.downloads.netgear.com/files/GPL/ReadyNASOS_V6.9.3_WW_src.zip
 
 Consumed by this openwrt package:
 https://github.com/openwrt/packages/tree/master/net/wsdd2
+
+Consumed by this archlinux user repository package:
+https://aur.archlinux.org/packages/wsdd2/
