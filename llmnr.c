@@ -1,11 +1,11 @@
 /*
    WSDD - Web Service Dynamic Discovery protocol server
-  
+
    LLMNR responder
 
 	Copyright (c) 2016 NETGEAR
 	Copyright (c) 2016 Hiro Sugawara
-  
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 3 of the License, or
@@ -201,7 +201,7 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 
 	/* verify in_name_len */
 	if (in_name_len != strlen(in_name)) {
-		DEBUG(1, L, "llmnr: bad name length %d != %d", in_name_len, strlen(in_name));
+		DEBUG(1, L, "llmnr: bad name length %ld != %ld", in_name_len, strlen(in_name));
 		free(in_name);
 		return -1;
 	}
