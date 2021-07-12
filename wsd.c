@@ -1,11 +1,11 @@
 /*
    WSDD - Web Service Dynamic Discovery protocol server
-  
+
    WSD protocol handler
 
 	Copyright (c) 2016 NETGEAR
 	Copyright (c) 2016 Hiro Sugawara
-  
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 3 of the License, or
@@ -110,7 +110,7 @@ static void uuid_endpoint(char uuid[UUIDLEN])
 {
 	FILE *fp = fopen("/etc/machine-id", "r");
 	int c, i = 0;
-	
+
 	if (!fp) {
 		fp = fopen("/proc/sys/kernel/random/boot_id", "r");
 	}
@@ -446,7 +446,7 @@ static int wsd_send_msg(int fd, struct endpoint *ep, const _saddr_t *sa,
 
 	char ip[_ADDRSTRLEN];
 	inet_ntop(sa->ss.ss_family, _SIN_ADDR(sa), ip, sizeof ip);
-	DEBUG(3, W, "WSD-TO %s port %u (fd=%d,len=%d,sent=%d) '%s'\n", ip, _SIN_PORT(sa), fd,
+	DEBUG(3, W, "WSD-TO %s port %u (fd=%d,len=%ld,sent=%d) '%s'\n", ip, _SIN_PORT(sa), fd,
 		msglen, ret, msg);
 
 	return ret != (int) msglen;
@@ -1045,7 +1045,7 @@ int wsd_recv(struct endpoint *ep)
 	{
 		char ip[_ADDRSTRLEN];
 		inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
-		DEBUG(3, W, "WSD-FROM %s port %u (fd=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa), fd, len, buf);
+		DEBUG(3, W, "WSD-FROM %s port %u (fd=%d,len=%ld): '%s'\n", ip, _SIN_PORT(&sa), fd, len, buf);
 	}
 
 	if (ep->type == SOCK_STREAM && strncmp(buf, "POST ", 5) == 0) {
@@ -1054,7 +1054,7 @@ int wsd_recv(struct endpoint *ep)
 		{
 			char ip[_ADDRSTRLEN];
 			inet_ntop(sa.ss.ss_family, _SIN_ADDR(&sa), ip, sizeof ip);
-			DEBUG(3, W, "WSD-BODY %s port %u (fd=%d,status=%d,len=%d): '%s'\n", ip, _SIN_PORT(&sa),
+			DEBUG(3, W, "WSD-BODY %s port %u (fd=%d,status=%d,len=%ld): '%s'\n", ip, _SIN_PORT(&sa),
 				fd, status, strlen(buf), buf);
 		}
 
