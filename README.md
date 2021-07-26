@@ -13,8 +13,8 @@ The primary purpose of this project is to enable WSD on samba servers so that ne
 hosted on a Unix box can appear in Windows File Explorer / Network.
 
 NOTE: Make sure there is no firewall rule blocking WSD multicast address
-239.255.255.250 and ff02::1:3, protocol UDP port 3702. Unicast SOAP HTTP
-WS-Dicsovery responder listens on TCP port 3702.
+239.255.255.250 and ff02::c, protocol UDP port 3702. Unicast SOAP HTTP
+WS-Discovery responder listens on TCP port 3702.
 
 LLMNR responder listens on multicast 224.0.0.252 / ff02::1:3 UDP port 5355
 and unicast TCP port 5355.
