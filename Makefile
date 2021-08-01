@@ -5,8 +5,8 @@
 #	Copyright (c) 2016 Hiro Sugawara
 #
 
-CFLAGS        = -Wall -Wextra -g -O0
-LDFLAGS       = -g
+CFLAGS        ?= -Wall -Wextra -g -O0
+LDFLAGS       ?= -g
 OBJFILES      = wsdd2.o wsd.o llmnr.o
 HEADERS       = wsdd.h wsd.h
 
