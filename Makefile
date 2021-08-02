@@ -31,7 +31,7 @@ install: wsdd2
 	install -d $(DESTDIR)/$(SBININSTALLDIR)
 	install wsdd2 $(DESTDIR)/$(SBININSTALLDIR)
 	install -d $(DESTDIR)/$(MANINSTALLDIR)/man8
-	install wsdd2.8 $(DESTDIR)/$(MANINSTALLDIR)/man8/wsdd2.8
+	install -m 0644 wsdd2.8 $(DESTDIR)/$(MANINSTALLDIR)/man8/wsdd2.8
 	install -d $(DESTDIR)/$(LIBINSTALLDIR)/systemd/system
 	install -m 0644 wsdd2.service $(DESTDIR)/$(LIBINSTALLDIR)/systemd/system
 
