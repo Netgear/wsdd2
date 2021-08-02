@@ -10,14 +10,10 @@ LDFLAGS       ?= -g
 OBJFILES      = wsdd2.o wsd.o llmnr.o
 HEADERS       = wsdd.h wsd.h
 
-INSTALLPREFIX ?= $(PREFIX)/usr
-SBINDIR       ?= sbin
-MANDIR        ?= share/man
-LIBDIR        ?= lib
-
-SBININSTALLDIR = $(INSTALLPREFIX)/$(SBINDIR)
-MANINSTALLDIR = $(INSTALLPREFIX)/$(MANDIR)
-LIBINSTALLDIR = $(LIBDIR)
+PREFIX  ?= /usr
+SBINDIR ?= $(PREFIX)/sbin
+MANDIR  ?= $(PREFIX)/share/man
+LIBDIR  ?= $(PREFIX)/lib
 
 all: wsdd2
 
@@ -28,12 +24,12 @@ wsdd2: $(OBJFILES)
 $(OBJFILES): $(HEADERS) Makefile
 
 install: wsdd2
-	install -d $(DESTDIR)/$(SBININSTALLDIR)
-	install wsdd2 $(DESTDIR)/$(SBININSTALLDIR)
-	install -d $(DESTDIR)/$(MANINSTALLDIR)/man8
-	install -m 0644 wsdd2.8 $(DESTDIR)/$(MANINSTALLDIR)/man8/wsdd2.8
-	install -d $(DESTDIR)/$(LIBINSTALLDIR)/systemd/system
-	install -m 0644 wsdd2.service $(DESTDIR)/$(LIBINSTALLDIR)/systemd/system
+	install -d $(DESTDIR)$(SBINDIR)
+	install wsdd2 $(DESTDIR)$(SBINDIR)
+	install -d $(DESTDIR)$(MANDIR)/man8
+	install -m 0644 wsdd2.8 $(DESTDIR)$(MANDIR)/man8
+	install -d $(DESTDIR)$(LIBDIR)/systemd/system
+	install -m 0644 wsdd2.service $(DESTDIR)$(LIBDIR)/systemd/system
 
 clean:
 	rm -f wsdd2 nl_debug $(OBJFILES)
