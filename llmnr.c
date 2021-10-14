@@ -240,7 +240,7 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	    strncasecmp(hostname, in_name, in_name_len) == 0)
 		found = 1;
 
-	for (char **pp = &hostaliases; !found && pp != &netbiosaliases; pp = &netbiosaliases) {
+	for (const char **pp = &hostaliases; !found && pp != &netbiosaliases; pp = &netbiosaliases) {
 	        for (const char *pname = *pp; pname && *pname;) {
 			const char *pend = strchr(pname, ' ');
 			size_t plen = pend ? (size_t) (pend - pname) : strlen(pname);

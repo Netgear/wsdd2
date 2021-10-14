@@ -32,7 +32,7 @@
 #include <time.h> // time_t, time()
 
 /* wsdd2.c */
-extern char *hostname, *hostaliases, *netbiosname, *netbiosaliases, *workgroup;
+extern const char *hostname, *hostaliases, *netbiosname, *netbiosaliases, *workgroup;
 extern int debug_L, debug_W;
 extern bool is_daemon;
 

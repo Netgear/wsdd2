@@ -57,7 +57,7 @@
 
 bool is_daemon = false;
 int debug_L, debug_W, debug_N;
-char *hostname = NULL, *hostaliases = NULL, *netbiosname = NULL, *netbiosaliases = NULL, *workgroup = NULL;
+const char *hostname = NULL, *hostaliases = NULL, *netbiosname = NULL, *netbiosaliases = NULL, *workgroup = NULL;
 
 static char *ifname = NULL;
 static unsigned ifindex = 0;
@@ -291,7 +291,7 @@ static const struct sock_params {
 	},
 };
 
-static const char *socktype_str[] = {
+static const char *const socktype_str[] = {
 	[SOCK_STREAM]    = "tcp",
 	[SOCK_DGRAM]     = "udp",
 	[SOCK_SEQPACKET] = "seq",
