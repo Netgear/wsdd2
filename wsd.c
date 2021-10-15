@@ -283,17 +283,17 @@ void init_getresp(void)
  * macros
  */
 #define RESET_BUFFER(buf, buflen) \
-	if (buflen > 0) do { memset(buf, 0, buflen); buflen=0; } while(0)
+	if ((buflen) > 0) do { memset(buf, 0, buflen); (buflen)=0; } while(0)
 
 #define COPY_STRING_TO_BUFFER(dst, dstlen, start, src, srclen) \
 	do { \
-		srclen = strlen(src); \
-		if (((start + srclen) - dst) > dstlen) { \
-			srclen = -1; \
+		(srclen) = strlen(src); \
+		if ((((start) + (srclen)) - (dst)) > (dstlen)) { \
+			(srclen) = -1; \
 			break; \
 		} \
 		strncpy(start, src, srclen); \
-		start += srclen; \
+		(start) += (srclen); \
 	} while(0)
 
 #define RESOLVE_TAG_AND_SAVE \
