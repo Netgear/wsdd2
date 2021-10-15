@@ -876,15 +876,15 @@ static int wsd_parse_http_header(int fd, struct endpoint *ep,
 		endpointlen = strlen(wsd_endpoint);
 
 	*eol = '\0';
-	if (strncmp(p, "POST /", 6)) {
+	if (strncmp(p, "POST /", 6) != 0) {
 		ep->errstr = __FUNCTION__ ": Only POST method supported";
 		return 405;
 	}
-	if (strncmp(p + 6, wsd_endpoint, endpointlen)) {
+	if (strncmp(p + 6, wsd_endpoint, endpointlen) != 0) {
 		ep->errstr = __FUNCTION__ ": Invalid endpoint UUID";
 		return 404;
 	}
-	if (strncmp(p + 6 + endpointlen, " HTTP/", 6)) {
+	if (strncmp(p + 6 + endpointlen, " HTTP/", 6) != 0) {
 		ep->errstr = __FUNCTION__ ": Must be HTTP/1.0 and up";
 		return 405;
 	}
@@ -902,7 +902,7 @@ again:
 		if ((val = HEADER_IS(p, "Content-Type:"))) {
 			while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
 				val++; // skip LWS
-			if (strcmp(val, "application/soap+xml")) {
+			if (strcmp(val, "application/soap+xml") != 0) {
 				ep->errstr = __FUNCTION__ ": Unsupported Content-Type";
 				return 400;
 			}
