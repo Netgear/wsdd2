@@ -32,7 +32,7 @@
 #include <time.h> // time_t, time()
 
 /* wsdd2.c */
-extern char *hostname, *hostaliases, *netbiosname, *netbiosaliases, *workgroup;
+extern const char *hostname, *hostaliases, *netbiosname, *netbiosaliases, *workgroup;
 extern int debug_L, debug_W;
 extern bool is_daemon;
 
@@ -66,11 +66,11 @@ extern bool is_daemon;
 #define ARRAY_SIZE(a)	(sizeof(a) / sizeof((a)[0]))
 #endif
 
-#ifndef max
-#define max(a, b)	((a)>(b)?(a):(b))
+#ifndef MAX
+#define MAX(a, b)	((a)>(b)?(a):(b))
 #endif
 
-#define _ADDRSTRLEN	max(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)
+#define _ADDRSTRLEN	MAX(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)
 
 typedef union {
 	struct sockaddr		sa;
@@ -95,7 +95,7 @@ struct endpoint {
 	int family, type, protocol;
 	in_port_t port;
 	int sock;
-	char *errstr;
+	const char *errstr;
 	int _errno;
 	size_t mlen, llen, mreqlen;
 	_saddr_t mcast, local;

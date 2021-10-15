@@ -283,17 +283,17 @@ void init_getresp(void)
  * macros
  */
 #define RESET_BUFFER(buf, buflen) \
-	if (buflen > 0) do { memset(buf, 0, buflen); buflen=0; } while(0)
+	if ((buflen) > 0) do { memset(buf, 0, buflen); (buflen)=0; } while(0)
 
 #define COPY_STRING_TO_BUFFER(dst, dstlen, start, src, srclen) \
 	do { \
-		srclen = strlen(src); \
-		if (((start + srclen) - dst) > dstlen) { \
-			srclen = -1; \
+		(srclen) = strlen(src); \
+		if ((((start) + (srclen)) - (dst)) > (dstlen)) { \
+			(srclen) = -1; \
 			break; \
 		} \
 		strncpy(start, src, srclen); \
-		start += srclen; \
+		(start) += (srclen); \
 	} while(0)
 
 #define RESOLVE_TAG_AND_SAVE \
@@ -362,7 +362,7 @@ static struct wsd_req_info *wsd_req_parse(const char *xml)
 	if (!msgid)
 		return NULL;
 
-	struct wsd_req_info *info = calloc(sizeof *info, 1);
+	struct wsd_req_info *info = (struct wsd_req_info *) calloc(sizeof *info, 1);
 	if (!info)
 		return NULL;
 
@@ -532,7 +532,7 @@ static int wsd_send_soap_msg(int fd, struct endpoint *ep,
 	"<wsa:To>%s</wsa:To>"
 	"<wsa:Action>%s</wsa:Action>"
 	"<wsa:MessageID>urn:uuid:%s</wsa:MessageID>"
-	"<wsd:AppSequence InstanceId=\"%lu\" SequenceId=\"urn:uuid:%s\" "
+	"<wsd:AppSequence InstanceId=\"%lld\" SequenceId=\"urn:uuid:%s\" "
 	"MessageNumber=\"%u\" />"
 	"%s"
 	"</soap:Header>"
@@ -559,7 +559,7 @@ static int wsd_send_soap_msg(int fd, struct endpoint *ep,
 	}
 
 	ssize_t msglen = asprintf(&msg, soap_msg_templ, to, action, msg_id,
-				wsd_instance, wsd_sequence,
+				(long long)wsd_instance, wsd_sequence,
 				++msg_no, soap_relates,
 				body);
 	free(soap_relates);
@@ -876,15 +876,15 @@ static int wsd_parse_http_header(int fd, struct endpoint *ep,
 		endpointlen = strlen(wsd_endpoint);
 
 	*eol = '\0';
-	if (strncmp(p, "POST /", 6)) {
+	if (strncmp(p, "POST /", 6) != 0) {
 		ep->errstr = __FUNCTION__ ": Only POST method supported";
 		return 405;
 	}
-	if (strncmp(p + 6, wsd_endpoint, endpointlen)) {
+	if (strncmp(p + 6, wsd_endpoint, endpointlen) != 0) {
 		ep->errstr = __FUNCTION__ ": Invalid endpoint UUID";
 		return 404;
 	}
-	if (strncmp(p + 6 + endpointlen, " HTTP/", 6)) {
+	if (strncmp(p + 6 + endpointlen, " HTTP/", 6) != 0) {
 		ep->errstr = __FUNCTION__ ": Must be HTTP/1.0 and up";
 		return 405;
 	}
@@ -902,7 +902,7 @@ again:
 		if ((val = HEADER_IS(p, "Content-Type:"))) {
 			while (*val == ' ' || *val == '\t' || *val == '\r' || *val == '\n')
 				val++; // skip LWS
-			if (strcmp(val, "application/soap+xml")) {
+			if (strcmp(val, "application/soap+xml") != 0) {
 				ep->errstr = __FUNCTION__ ": Unsupported Content-Type";
 				return 400;
 			}

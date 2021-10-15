@@ -57,7 +57,7 @@
 
 bool is_daemon = false;
 int debug_L, debug_W, debug_N;
-char *hostname = NULL, *hostaliases = NULL, *netbiosname = NULL, *netbiosaliases = NULL, *workgroup = NULL;
+const char *hostname = NULL, *hostaliases = NULL, *netbiosname = NULL, *netbiosaliases = NULL, *workgroup = NULL;
 
 static char *ifname = NULL;
 static unsigned ifindex = 0;
@@ -291,7 +291,7 @@ static const struct sock_params {
 	},
 };
 
-static const char *socktype_str[] = {
+static const char *const socktype_str[] = {
 	[SOCK_STREAM]    = "tcp",
 	[SOCK_DGRAM]     = "udp",
 	[SOCK_SEQPACKET] = "seq",
@@ -302,7 +302,7 @@ static int open_ep(struct endpoint **epp, struct service *sv, const struct ifadd
 #define __FUNCTION__	"open_ep"
 	const unsigned int disable = 0, enable = 1;
 
-	struct endpoint *ep = calloc(sizeof(*ep), 1);
+	struct endpoint *ep = (struct endpoint *) calloc(sizeof(*ep), 1);
 	if ((*epp = ep) == NULL) {
 		errno = ENOMEM;
 		err(EXIT_FAILURE, __FUNCTION__ ": calloc");
@@ -921,7 +921,8 @@ again:
 			}
 
 		} else if (sv->family == AF_NETLINK) {
-			const struct ifaddrs ifa = { .ifa_name = "netlink", };
+			struct ifaddrs ifa = {};
+			strcpy(ifa.ifa_name, "netlink");
 
 			DEBUG(2, W, "%s 0x%x @ %s", sv->name, sv->nl_groups, ifa.ifa_name);
 			if (open_ep(&ep, sv, &ifa) != 0) {

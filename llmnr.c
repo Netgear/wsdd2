@@ -187,7 +187,7 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 		/* append to the whole name */
 		in_name_len += *in_name_p + (*in_name ? 1 : 0); // '.' if not first
 
-		in_name = realloc(in_name, in_name_len + 1);
+		in_name = (char *) realloc(in_name, in_name_len + 1);
 		if (in_name == NULL) {
 			DEBUG(1, L, "llmnr: realloc() failed");
 			return -1;
@@ -240,7 +240,7 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	    strncasecmp(hostname, in_name, in_name_len) == 0)
 		found = 1;
 
-	for (char **pp = &hostaliases; !found && pp != &netbiosaliases; pp = &netbiosaliases) {
+	for (const char **pp = &hostaliases; !found && pp != &netbiosaliases; pp = &netbiosaliases) {
 	        for (const char *pname = *pp; pname && *pname;) {
 			const char *pend = strchr(pname, ' ');
 			size_t plen = pend ? (size_t) (pend - pname) : strlen(pname);
@@ -302,7 +302,7 @@ static int llmnr_send_response(struct endpoint *ep, _saddr_t *sa,
 	 * allocate output buffer
 	 * size will be same one as incoming query plus the answer section
 	 */
-	out = calloc(inlen + answer_len, 1);
+	out = (char *) calloc(inlen + answer_len, 1);
 	if (out == NULL) {
 		DEBUG(0, L, "llmnr: no memory for output buffer");
 		return -1;
