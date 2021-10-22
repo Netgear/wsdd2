@@ -922,7 +922,7 @@ again:
 
 		} else if (sv->family == AF_NETLINK) {
 			struct ifaddrs ifa = {};
-			strcpy(ifa.ifa_name, "netlink");
+			ifa.ifa_name = "netlink";
 
 			DEBUG(2, W, "%s 0x%x @ %s", sv->name, sv->nl_groups, ifa.ifa_name);
 			if (open_ep(&ep, sv, &ifa) != 0) {
