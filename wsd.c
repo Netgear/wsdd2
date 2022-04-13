@@ -78,8 +78,11 @@ static void set_seed(void)
 
 	time((time_t *)&seed);
 
-	if (fp) {
+	fseek(fp, 0, SEEK_END);
+
+	if (fp && 0 != ftell(fp) ) {
 		unsigned long s;
+		rewind(fp);
 
 		while (fscanf(fp, "%8lx", &s) > 0)
 			seed ^= s;
@@ -113,10 +116,19 @@ static void uuid_endpoint(char uuid[UUIDLEN])
 
 	if (!fp) {
 		fp = fopen("/proc/sys/kernel/random/boot_id", "r");
+	} else {
+		fseek(fp, 0, SEEK_END);
+		long size = ftell(fp);
+		if (33 != size) {
+			fclose(fp);
+			fp = fopen("/proc/sys/kernel/random/boot_id", "r");
+		} else {
+			rewind(fp);
+		}
 	}
 
 	if (!fp) {
-		DEBUG(0, W, "Can't open required '/etc/machine-id' or '/proc/sys/kernel/random/boot_id'");
+		DEBUG(0, W, "Can't open or file empty, required '/etc/machine-id' or '/proc/sys/kernel/random/boot_id'");
 		return;
 	}
 
