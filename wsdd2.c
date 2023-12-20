@@ -520,7 +520,7 @@ static bool is_new_addr(struct nlmsghdr *nh)
 
 	if (ifindex && ifam->ifa_index != ifindex) {
 		char buf[IFNAMSIZ];
-		if (!if_indextoname(ifindex, buf) || strcmp(buf, ifname) != 0)
+		if (!if_indextoname(ifam->ifa_index, buf) || strcmp(buf, ifname) != 0)
 			return false;
 		ifindex = ifam->ifa_index;
 	}
