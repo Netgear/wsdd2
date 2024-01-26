@@ -18,8 +18,8 @@ wsdd2 \- server to provide WSDD/LLMNR services to clients
 .SH "SYNOPSIS"
 .HP \w'\ 'u
 wsddd2 [\-h] [\-d] [\-4] [\-6] [\-u] [\-t] [\-l] [\-w] [\-L] [\-W]
-[\-i <intrerface>] [\-H <hostname>] [\-N <netbiosname>] [\-G <workgroup>]
-[\-b <kvlist>]
+[\-i <intrerface>] [\-H <hostname>] [\-A <hostaliases>] [\-N <netbiosname>] 
+[\-B <netbiosaliases>] [\-G <workgroup>] [\-b <kvlist>]
 
 .SH "DESCRIPTION"
 .PP
@@ -124,12 +124,30 @@ functions.
 .RE
 
 .PP
+\-A <hostaliases>
+.RS 4
+Use specified string as list of DNS machine names instead of value 
+returned by
+.br
+\fBtestparm -s --parameter-name="additional dns hostnames"\fR command.
+.RE
+
+.PP
 \-N <nebiosname>
 .RS 4
 Use specified string as NETBIOS machine name instead of value returned by
 .br
 \fBtestparm -s --parameter-name="netbios name"\fR command or system host
 name.
+.RE
+
+.PP
+\-B <nebiosaliases>
+.RS 4
+Use specified string as list of NETBIOS machine names instead of value 
+returned by
+.br
+\fBtestparm -s --parameter-name="netbios aliases"\fR command.
 .RE
 
 .PP

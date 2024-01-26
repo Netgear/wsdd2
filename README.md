@@ -11,6 +11,8 @@ Microsoft is moving to support mDNS/DNS-SD, but not yet there.
 
 The primary purpose of this project is to enable WSD on Samba servers so that network shares
 hosted on a Unix box can appear in Windows File Explorer / Network.
+If you predefine WITHOUT_TESTPARM as a macro when building,
+wsdd2 can be used on lightweight Samba servers without testparm support.
 
 NOTE: Make sure there is no firewall rule blocking WSD multicast address
 239.255.255.250 and ff02::c, protocol UDP port 3702. Unicast SOAP HTTP
